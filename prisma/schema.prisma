@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  fullName     String?
+  role         String   @default("staff")
+  createdAt    DateTime @default(now())
+}
+
+model Course {
+  id            String    @id @default(cuid())
+  maKhoaHoc     String    @unique
+  tenKhoaHoc    String?
+  maBci         String?
+  hangDaoTao    String?
+  ngayKhaiGiang DateTime?
+  ngayBeGiang   DateTime?
+  ngaySatHach   DateTime?
+  soHocSinh     Int?
+  students      Student[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Student {
+  id                 String                @id @default(cuid())
+  courseId           String?
+
+  maDk               String?               @unique
+  soHoSo             String?
+  soCmt              String?               @unique
+
+  hoVaTen            String
+  ngaySinh           DateTime?
+  gioiTinh           String?
+  soDienThoai        String?
+  ghiChu             String?
+
+  hangGplx           String?
+  hangDaoTao         String?
+  ngayNhanHoSo       DateTime?
+
+  course             Course?               @relation(fields: [courseId], references: [id])
+
+  medicalChecks      MedicalCheck[]
+  graduationResults  GraduationResult[]
+  practicalExams     PracticalExamResult[]
+  examComponents     ExamComponent[]
+
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+
+  @@index([hoVaTen])
+  @@index([soHoSo])
+  @@index([soDienThoai])
+}
+
+model MedicalCheck {
+  id          String   @id @default(cuid())
+  studentId   String
+  ngayKham    DateTime
+  ngayHetHan  DateTime
+  ghiChu      String?
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+}
+
+model GraduationResult {
+  id          String   @id @default(cuid())
+  studentId   String
+  ngayThi     DateTime?
+  lyThuyet    String?
+  moPhong     String?
+  hinh        String?
+  duong       String?
+  ketQua      String?
+  noiDungRot  String?
+  createdAt   DateTime @default(now())
+
+  student     Student  @relation(fields: [studentId], references: [id])
+}
+
+model PracticalExamResult {
+  id          String   @id @default(cuid())
+  studentId   String
+  ngayThi     DateTime?
+  ngayDat     DateTime?
+  ketQua      String?
+  noiDungRot  String?
+  ghiChu      String?
+
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt   DateTime @default(now())
+}
+
+model ExamComponent {
+  id             String   @id @default(cuid())
+  studentId      String
+  tenNoiDung     String
+  ngayDat        DateTime?
+  baoLuuDenNgay  DateTime?
+  conHieuLuc     Boolean  @default(true)
+  ghiChu         String?
+
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  createdAt      DateTime @default(now())
+}
+
+model ImportLog {
+  id          String   @id @default(cuid())
+  loaiFile    String
+  tenFile     String
+  tongSoDong  Int      @default(0)
+  thanhCong   Int      @default(0)
+  thatBai     Int      @default(0)
+  ghiChu      String?
+  importedBy  String?
+  createdAt   DateTime @default(now())
+}
