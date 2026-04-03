@@ -1,5 +1,5 @@
-import DashboardShell from "@/components/dashboard-shell";
-import Header from "@/components/header";
+import DashboardShell from "../../components/dashboard-shell";
+import Header from "../../components/header";
 
 export default function ImportXmlPage() {
   return (
@@ -33,19 +33,6 @@ export default function ImportXmlPage() {
             <button className="btn btn-primary">Bắt đầu import</button>
             <button className="btn btn-secondary">Xóa chọn</button>
           </div>
-        </div>
-      </section>
-
-      <section className="section-spacing card">
-        <div className="card-header">
-          <h2 style={{ margin: 0, fontSize: 18 }}>Lưu ý</h2>
-        </div>
-        <div className="card-body">
-          <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
-            <li>Kiểm tra đúng cấu trúc XML trước khi tải lên.</li>
-            <li>Ưu tiên import dữ liệu gốc trước các bước cập nhật kết quả thi.</li>
-            <li>Nên sao lưu dữ liệu trước khi import số lượng lớn.</li>
-          </ul>
         </div>
       </section>
     </DashboardShell>

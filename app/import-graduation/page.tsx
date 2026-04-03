@@ -1,5 +1,5 @@
-import DashboardShell from "@/components/dashboard-shell";
-import Header from "@/components/header";
+import DashboardShell from "../../components/dashboard-shell";
+import Header from "../../components/header";
 
 export default function ImportGraduationPage() {
   return (
@@ -39,23 +39,6 @@ export default function ImportGraduationPage() {
             <button className="btn btn-primary">Import kết quả</button>
             <button className="btn btn-secondary">Kiểm tra trước</button>
           </div>
-        </div>
-      </section>
-
-      <section className="section-spacing card">
-        <div className="card-header">
-          <h2 style={{ margin: 0, fontSize: 18 }}>Quy ước trạng thái</h2>
-        </div>
-        <div className="card-body">
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <span className="badge badge-success">Đạt</span>
-            <span className="badge badge-danger">Rớt</span>
-            <span className="badge badge-warning">Vắng</span>
-            <span className="badge badge-neutral">Chưa có</span>
-          </div>
-          <p style={{ marginTop: 16, color: "#64748b" }}>
-            Có thể cập nhật nối tiếp từng nội dung: Lý thuyết, Mô phỏng, Hình, Đường.
-          </p>
         </div>
       </section>
     </DashboardShell>

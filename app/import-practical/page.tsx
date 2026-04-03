@@ -1,89 +1,132 @@
-"use client";
+import DashboardShell from "../components/dashboard-shell";
+import Header from "../components/header";
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import {
-  DownloadIcon,
-  FileIcon,
-  HomeIcon,
-  UploadIcon,
-  UsersIcon,
-} from "./icons";
-
-const menus = [
-  { href: "/", label: "Dashboard", icon: HomeIcon },
-  { href: "/students", label: "Danh sách học viên", icon: UsersIcon },
-  { href: "/import-xml", label: "Import XML", icon: UploadIcon },
-  { href: "/import-graduation", label: "Import tốt nghiệp", icon: FileIcon },
-  { href: "/import-practical", label: "Import sát hạch", icon: FileIcon },
-  { href: "/export-ma-dk", label: "Export MA_DK", icon: DownloadIcon },
-];
-
-export default function Sidebar() {
-  const pathname = usePathname();
-
+export default function HomePage() {
   return (
-    <aside
-      style={{
-        width: 260,
-        background: "var(--sidebar)",
-        color: "var(--sidebar-foreground)",
-        minHeight: "100vh",
-        padding: 20,
-        position: "sticky",
-        top: 0,
-      }}
-    >
-      <div style={{ marginBottom: 24 }}>
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 14,
-            background: "linear-gradient(135deg, #14b8a6, #0f766e)",
-            display: "grid",
-            placeItems: "center",
-            fontSize: 20,
-            fontWeight: 800,
-            color: "white",
-            marginBottom: 12,
-          }}
-        >
-          GV
-        </div>
-        <div style={{ fontSize: 20, fontWeight: 800 }}>Hệ thống Giáo vụ</div>
-        <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 6 }}>
-          Quản lý học viên và dữ liệu đào tạo
-        </div>
-      </div>
+    <DashboardShell>
+      <Header
+        title="Dashboard"
+        subtitle="Tổng quan hệ thống quản lý học viên, import và export dữ liệu."
+      />
 
-      <nav style={{ display: "grid", gap: 8 }}>
-        {menus.map((item) => {
-          const active = pathname === item.href;
-          const Icon = item.icon;
+      <section className="stats-grid">
+        <div className="card stat-card">
+          <div className="stat-label">Tổng học viên</div>
+          <div className="stat-value">0</div>
+          <div className="stat-note">Sẽ tự tăng khi import dữ liệu XML</div>
+        </div>
 
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 12,
-                padding: "12px 14px",
-                borderRadius: 14,
-                background: active ? "#1e293b" : "transparent",
-                color: active ? "white" : "#cbd5e1",
-                border: active ? "1px solid #334155" : "1px solid transparent",
-                transition: "0.2s ease",
-              }}
+        <div className="card stat-card">
+          <div className="stat-label">Khóa học</div>
+          <div className="stat-value">0</div>
+          <div className="stat-note">Quản lý theo mã khóa và ngày khai giảng</div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">Tốt nghiệp chờ cập nhật</div>
+          <div className="stat-value">0</div>
+          <div className="stat-note">Theo dữ liệu import tốt nghiệp</div>
+        </div>
+
+        <div className="card stat-card">
+          <div className="stat-label">Sát hạch chờ cập nhật</div>
+          <div className="stat-value">0</div>
+          <div className="stat-note">Theo dữ liệu import sát hạch thực hành</div>
+        </div>
+      </section>
+
+      <section className="section-spacing card">
+        <div className="card-header">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Truy cập nhanh</h2>
+          <p className="page-subtitle">
+            Chọn nghiệp vụ cần thao tác trong ngày.
+          </p>
+        </div>
+
+        <div className="card-body">
+          <div className="stats-grid">
+            <a
+              href="/students"
+              className="card stat-card"
+              style={{ display: "block" }}
             >
-              <Icon className="h-5 w-5" />
-              <span style={{ fontSize: 14, fontWeight: 600 }}>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
-    </aside>
+              <div className="stat-label">Danh sách học viên</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Xem và tra cứu dữ liệu
+              </div>
+              <div className="stat-note">Tìm theo MA_DK, họ tên, CMT...</div>
+            </a>
+
+            <a
+              href="/import-xml"
+              className="card stat-card"
+              style={{ display: "block" }}
+            >
+              <div className="stat-label">Import XML</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Nạp dữ liệu đầu vào
+              </div>
+              <div className="stat-note">
+                Tạo học viên, khóa học, hồ sơ liên quan
+              </div>
+            </a>
+
+            <a
+              href="/import-graduation"
+              className="card stat-card"
+              style={{ display: "block" }}
+            >
+              <div className="stat-label">Import tốt nghiệp</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Cập nhật kết quả thi
+              </div>
+              <div className="stat-note">Lý thuyết, mô phỏng, hình, đường</div>
+            </a>
+
+            <a
+              href="/import-practical"
+              className="card stat-card"
+              style={{ display: "block" }}
+            >
+              <div className="stat-label">Import sát hạch</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Cập nhật trạng thái cuối
+              </div>
+              <div className="stat-note">
+                Theo dữ liệu import sát hạch thực hành
+              </div>
+            </a>
+
+            <a
+              href="/export-madk"
+              className="card stat-card"
+              style={{ display: "block" }}
+            >
+              <div className="stat-label">Export MA_DK</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Xuất dữ liệu truy vấn
+              </div>
+              <div className="stat-note">
+                Xuất theo MA_DK hoặc mapping
+              </div>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-spacing card">
+        <div className="card-header">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Hướng xử lý khuyến nghị</h2>
+        </div>
+        <div className="card-body">
+          <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 1.8 }}>
+            <li>Import XML để tạo dữ liệu nền.</li>
+            <li>Import tốt nghiệp để cập nhật kết quả từng nội dung.</li>
+            <li>Import sát hạch thực hành để cập nhật trạng thái cuối.</li>
+            <li>Export theo MA_DK để đối chiếu và truy vấn.</li>
+          </ol>
+        </div>
+      </section>
+    </DashboardShell>
   );
 }

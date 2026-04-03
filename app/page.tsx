@@ -1,5 +1,5 @@
-import DashboardShell from "@/components/dashboard-shell";
-import Header from "@/components/header";
+import DashboardShell from "../components/dashboard-shell";
+import Header from "../components/header";
 
 export default function HomePage() {
   return (
@@ -98,7 +98,7 @@ export default function HomePage() {
             </a>
 
             <a
-              href="/export-ma-dk"
+              href="/export-madk"
               className="card stat-card"
               style={{ display: "block" }}
             >

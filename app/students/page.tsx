@@ -1,5 +1,5 @@
-import DashboardShell from "@/components/dashboard-shell";
-import Header from "@/components/header";
+import DashboardShell from "../../components/dashboard-shell";
+import Header from "../../components/header";
 
 const demoStudents = [
   {
