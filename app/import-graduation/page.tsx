@@ -1,81 +1,63 @@
-"use client";
-
-import { useState } from "react";
+import DashboardShell from "@/components/dashboard-shell";
+import Header from "@/components/header";
 
 export default function ImportGraduationPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState("");
-
-  const handleUpload = async () => {
-    if (!file) {
-      setMessage("Vui lòng chọn file Excel");
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setMessage("");
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const res = await fetch("/api/import-graduation", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json().catch(() => null);
-
-      if (!res.ok) {
-        setMessage(data?.detail || data?.error || "Import thất bại");
-        console.log("IMPORT ERROR:", data);
-        return;
-      }
-
-      setMessage(`Import thành công: ${data.updated} học viên`);
-    } catch (error) {
-      console.error(error);
-      setMessage("Có lỗi xảy ra");
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <div style={{ padding: 24 }}>
-      <h1>Import kết quả Tốt nghiệp</h1>
-
-      <p>
-        File Excel cần có các cột:
-      </p>
-
-      <ul>
-        <li><b>ma_dk</b></li>
-        <li>ngay_thi_tot_nghiep</li>
-        <li>ly_thuyet</li>
-        <li>mo_phong</li>
-        <li>hinh</li>
-        <li>duong</li>
-      </ul>
-
-      <input
-        type="file"
-        accept=".xlsx,.xls"
-        onChange={(e) => setFile(e.target.files?.[0] || null)}
+    <DashboardShell>
+      <Header
+        title="Import tốt nghiệp"
+        subtitle="Cập nhật kết quả tốt nghiệp theo từng nội dung thi."
       />
 
-      <div style={{ marginTop: 16 }}>
-        <button onClick={handleUpload} disabled={loading}>
-          {loading ? "Đang import..." : "Import Excel"}
-        </button>
-      </div>
+      <section className="card">
+        <div className="card-header">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Tải file kết quả tốt nghiệp</h2>
+        </div>
 
-      {message && (
-        <p style={{ marginTop: 16 }}>
-          {message}
-        </p>
-      )}
-    </div>
+        <div className="card-body">
+          <div className="form-grid">
+            <div>
+              <label className="label">File dữ liệu</label>
+              <input type="file" className="input" />
+            </div>
+            <div>
+              <label className="label">Ngày thi</label>
+              <input type="date" className="input" />
+            </div>
+          </div>
+
+          <div className="section-spacing">
+            <label className="label">Ghi chú</label>
+            <textarea
+              className="textarea"
+              rows={4}
+              placeholder="Hệ thống hỗ trợ cập nhật dồn kết quả theo từng lần thi..."
+            />
+          </div>
+
+          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
+            <button className="btn btn-primary">Import kết quả</button>
+            <button className="btn btn-secondary">Kiểm tra trước</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="section-spacing card">
+        <div className="card-header">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Quy ước trạng thái</h2>
+        </div>
+        <div className="card-body">
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <span className="badge badge-success">Đạt</span>
+            <span className="badge badge-danger">Rớt</span>
+            <span className="badge badge-warning">Vắng</span>
+            <span className="badge badge-neutral">Chưa có</span>
+          </div>
+          <p style={{ marginTop: 16, color: "#64748b" }}>
+            Có thể cập nhật nối tiếp từng nội dung: Lý thuyết, Mô phỏng, Hình, Đường.
+          </p>
+        </div>
+      </section>
+    </DashboardShell>
   );
 }
