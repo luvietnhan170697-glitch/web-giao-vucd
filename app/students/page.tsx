@@ -29,6 +29,13 @@ type StudentItem = {
   } | null;
 };
 
+type PaginationInfo = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "";
   const d = new Date(value);
@@ -46,8 +53,21 @@ export default function StudentsPage() {
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [pagination, setPagination] = useState<PaginationInfo>({
+    page: 1,
+    pageSize: 50,
+    total: 0,
+    totalPages: 1,
+  });
 
-  async function fetchStudents(nextQ = q, nextCourseId = courseId) {
+  async function fetchStudents(
+    nextQ = q,
+    nextCourseId = courseId,
+    nextPage = page,
+    nextPageSize = pageSize
+  ) {
     try {
       setLoading(true);
       setError("");
@@ -55,11 +75,10 @@ export default function StudentsPage() {
       const params = new URLSearchParams();
       if (nextQ.trim()) params.set("q", nextQ.trim());
       if (nextCourseId) params.set("courseId", nextCourseId);
+      params.set("page", String(nextPage));
+      params.set("pageSize", String(nextPageSize));
 
-      const query = params.toString();
-      const url = query ? `/api/students?${query}` : "/api/students";
-
-      const res = await fetch(url, {
+      const res = await fetch(`/api/students?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
       });
@@ -72,6 +91,14 @@ export default function StudentsPage() {
 
       setStudents(data.students || []);
       setCourses(data.courses || []);
+      setPagination(
+        data.pagination || {
+          page: 1,
+          pageSize: nextPageSize,
+          total: 0,
+          totalPages: 1,
+        }
+      );
     } catch (err: any) {
       setError(err?.message || "Có lỗi xảy ra");
       setStudents([]);
@@ -81,17 +108,32 @@ export default function StudentsPage() {
   }
 
   useEffect(() => {
-    fetchStudents("", "");
+    fetchStudents("", "", 1, 50);
   }, []);
 
   function handleSearch() {
-    fetchStudents(q, courseId);
+    setPage(1);
+    fetchStudents(q, courseId, 1, pageSize);
   }
 
   function handleReset() {
     setQ("");
     setCourseId("");
-    fetchStudents("", "");
+    setPage(1);
+    setPageSize(50);
+    fetchStudents("", "", 1, 50);
+  }
+
+  function goToPage(nextPage: number) {
+    if (nextPage < 1 || nextPage > pagination.totalPages) return;
+    setPage(nextPage);
+    fetchStudents(q, courseId, nextPage, pageSize);
+  }
+
+  function handlePageSizeChange(value: number) {
+    setPageSize(value);
+    setPage(1);
+    fetchStudents(q, courseId, 1, value);
   }
 
   return (
@@ -136,7 +178,15 @@ export default function StudentsPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
+          <div
+            style={{
+              marginTop: 16,
+              display: "flex",
+              gap: 10,
+              alignItems: "center",
+              flexWrap: "wrap",
+            }}
+          >
             <button
               type="button"
               className="btn btn-primary"
@@ -154,6 +204,19 @@ export default function StudentsPage() {
             >
               Làm mới
             </button>
+
+            <div style={{ marginLeft: "auto", minWidth: 180 }}>
+              <label className="label">Số dòng / trang</label>
+              <select
+                className="select"
+                value={pageSize}
+                onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              >
+                <option value={20}>20 dòng</option>
+                <option value={50}>50 dòng</option>
+                <option value={100}>100 dòng</option>
+              </select>
+            </div>
           </div>
 
           {error ? (
@@ -170,7 +233,7 @@ export default function StudentsPage() {
           <p className="page-subtitle">
             {loading
               ? "Đang tải dữ liệu..."
-              : `Tổng số học viên hiển thị: ${students.length}`}
+              : `Hiển thị ${students.length} / ${pagination.total} học viên`}
           </p>
         </div>
 
@@ -215,6 +278,42 @@ export default function StudentsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        <div
+          className="card-body"
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+            borderTop: "1px solid #e2e8f0",
+          }}
+        >
+          <div style={{ fontSize: 14, color: "#64748b" }}>
+            Trang {pagination.page} / {pagination.totalPages}
+          </div>
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => goToPage(pagination.page - 1)}
+              disabled={loading || pagination.page <= 1}
+            >
+              Trang trước
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => goToPage(pagination.page + 1)}
+              disabled={loading || pagination.page >= pagination.totalPages}
+            >
+              Trang sau
+            </button>
+          </div>
         </div>
       </section>
     </DashboardShell>

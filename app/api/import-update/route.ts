@@ -1,54 +1,70 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import * as XLSX from "xlsx";
 
 const prisma = new PrismaClient();
 
-function parseDate(value?: string | null): Date | null {
+function parseExcelDate(value: any): Date | null {
   if (!value) return null;
 
-  const v = String(value).trim();
-  if (!v) return null;
+  // Excel number date
+  if (typeof value === "number") {
+    const date = XLSX.SSF.parse_date_code(value);
+    return new Date(date.y, date.m - 1, date.d);
+  }
 
-  const d = new Date(v);
-  return isNaN(d.getTime()) ? null : d;
+  // string dd/mm/yyyy
+  if (typeof value === "string") {
+    const parts = value.split("/");
+    if (parts.length === 3) {
+      const [dd, mm, yyyy] = parts;
+      return new Date(Number(yyyy), Number(mm) - 1, Number(dd));
+    }
+
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  return null;
 }
 
-function addOneYear(date: Date) {
+function add12Months(date: Date) {
   const d = new Date(date);
-  d.setFullYear(d.getFullYear() + 1);
+  d.setMonth(d.getMonth() + 12);
   return d;
 }
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const file = formData.get("file") as File;
 
     if (!file) {
       return NextResponse.json(
-        { error: "Chưa chọn file Excel" },
+        { error: "Không có file upload" },
         { status: 400 }
       );
     }
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
+    const buffer = Buffer.from(await file.arrayBuffer());
 
     const workbook = XLSX.read(buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<any>(sheet);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
     let success = 0;
-    const errors: string[] = [];
+    let failed = 0;
+    const errors: any[] = [];
 
-    for (const row of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
       try {
-        const maDk = row.ma_dk ? String(row.ma_dk).trim() : "";
+        const maDk = row["ma_dk"]?.toString().trim();
 
         if (!maDk) {
-          errors.push("Thiếu ma_dk");
+          failed++;
+          errors.push({ row: i + 2, error: "Thiếu MA_DK" });
           continue;
         }
 
@@ -57,68 +73,72 @@ export async function POST(req: Request) {
         });
 
         if (!student) {
-          errors.push(`Không tìm thấy học viên có MA_DK: ${maDk}`);
+          failed++;
+          errors.push({ row: i + 2, error: "Không tìm thấy học viên" });
           continue;
         }
 
-        const soDienThoai = row.so_dien_thoai
-          ? String(row.so_dien_thoai).trim()
-          : null;
+        // ===== update student =====
+        const updateData: any = {};
 
-        const ghiChu = row.ghi_chu
-          ? String(row.ghi_chu).trim()
-          : null;
+        if (row["so_dien_thoai"]) {
+          updateData.soDienThoai = String(row["so_dien_thoai"]);
+        }
 
-        const ngayKham = row.ngay_kham_suc_khoe
-          ? parseDate(String(row.ngay_kham_suc_khoe))
-          : null;
+        if (row["giao_vien"]) {
+          updateData.giaoVien = String(row["giao_vien"]);
+        }
 
-        await prisma.student.update({
-          where: { maDk },
-          data: {
-            soDienThoai,
-            ghiChu,
-          },
-        });
+        if (row["ctv"]) {
+          updateData.ctv = String(row["ctv"]);
+        }
+
+        if (row["ghi_chu"]) {
+          updateData.ghiChu = String(row["ghi_chu"]);
+        }
+
+        if (Object.keys(updateData).length > 0) {
+          await prisma.student.update({
+            where: { id: student.id },
+            data: updateData,
+          });
+        }
+
+        // ===== medical check =====
+        const ngayKham = parseExcelDate(row["ngay_kham_suc_khoe"]);
 
         if (ngayKham) {
+          const ngayHetHan = add12Months(ngayKham);
+
           await prisma.medicalCheck.create({
             data: {
               studentId: student.id,
               ngayKham,
-              ngayHetHan: addOneYear(ngayKham),
-              ghiChu: ghiChu || "Import từ Excel",
+              ngayHetHan,
             },
           });
         }
 
         success++;
-      } catch (e: any) {
-        errors.push(e.message);
+      } catch (err: any) {
+        failed++;
+        errors.push({
+          row: i + 2,
+          error: err.message,
+        });
       }
     }
 
-    await prisma.importLog.create({
-      data: {
-        loaiFile: "EXCEL_UPDATE",
-        tenFile: file.name,
-        tongSoDong: rows.length,
-        thanhCong: success,
-        thatBai: errors.length,
-        ghiChu: errors.length ? errors.join(" | ").slice(0, 1000) : "OK",
-      },
-    });
-
     return NextResponse.json({
-      message: "Import cập nhật thành công",
+      message: "Import update hoàn tất",
       total: rows.length,
       success,
-      failed: errors.length,
+      failed,
       errors,
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Lỗi import Excel cập nhật" },
+      { error: error?.message || "Lỗi import update" },
       { status: 500 }
     );
   }
