@@ -24,8 +24,9 @@ export const API_PERMISSIONS: Record<string, string[]> = {
   "/api/import-practical": [ROLE_ADMIN, ROLE_STAFF],
   "/api/import-update": [ROLE_ADMIN, ROLE_STAFF],
   "/api/export-ma-dk": [ROLE_ADMIN, ROLE_STAFF],
-
+  "/api/students": [ROLE_ADMIN, ROLE_STAFF, ROLE_VIEWER],
   "/api/users": [ROLE_ADMIN],
+  "/api/courses": ["admin"],
 };
 
 function matchPermission(
