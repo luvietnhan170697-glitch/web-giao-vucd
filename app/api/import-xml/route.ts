@@ -10,13 +10,11 @@ function parseDate(value?: string | null): Date | null {
   const v = String(value).trim();
   if (!v) return null;
 
-  // yyyy-mm-dd hoặc yyyy-mm-dd hh:mm:ss
   if (v.includes("-")) {
     const d = new Date(v);
     return isNaN(d.getTime()) ? null : d;
   }
 
-  // yyyymmdd
   if (/^\d{8}$/.test(v)) {
     const yyyy = v.slice(0, 4);
     const mm = v.slice(4, 6);
@@ -36,16 +34,17 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
-const file = formData.get("file") as File;
+    const file = formData.get("file") as File | null;
+    const note = String(formData.get("note") || "");
 
-if (!file) {
-  return NextResponse.json(
-    { error: "Không có file XML" },
-    { status: 400 }
-  );
-}
+    if (!file) {
+      return NextResponse.json(
+        { error: "Không có file XML" },
+        { status: 400 }
+      );
+    }
 
-const xmlText = await file.text();
+    const xmlText = await file.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -149,16 +148,20 @@ const xmlText = await file.text();
     await prisma.importLog.create({
       data: {
         loaiFile: "XML",
-        tenFile: "import-xml",
+        tenFile: file.name || "import-xml",
         tongSoDong: nguoiLxList.length,
         thanhCong: success,
         thatBai: errors.length,
-        ghiChu: errors.length ? errors.join(" | ").slice(0, 1000) : "OK",
+        ghiChu: errors.length
+          ? errors.join(" | ").slice(0, 1000)
+          : note || "OK",
       },
     });
 
     return NextResponse.json({
       message: "Import XML thành công",
+      fileName: file.name,
+      note,
       course: {
         maKhoaHoc: course.maKhoaHoc,
         tenKhoaHoc: course.tenKhoaHoc,

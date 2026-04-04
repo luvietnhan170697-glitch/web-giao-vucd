@@ -110,14 +110,16 @@ export default function ImportXmlPage() {
 
           <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
             <button
+              type="button"
               className="btn btn-primary"
               onClick={handleImport}
-              disabled={loading || !file}
+              disabled={loading}
             >
               {loading ? "Đang import..." : "Bắt đầu import"}
             </button>
 
             <button
+              type="button"
               className="btn btn-secondary"
               onClick={handleClear}
               disabled={loading}
