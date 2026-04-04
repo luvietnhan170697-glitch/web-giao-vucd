@@ -5,7 +5,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const username = "admin";
-  const password = "123456";
+  const password = "17061997";
   const passwordHash = await bcrypt.hash(password, 10);
 
   const existing = await prisma.user.findUnique({
@@ -25,7 +25,7 @@ async function main() {
 
     console.log("Đã cập nhật lại tài khoản admin");
     console.log("username: admin");
-    console.log("password: 123456");
+    console.log("password: 17061997");
     return;
   }
 
