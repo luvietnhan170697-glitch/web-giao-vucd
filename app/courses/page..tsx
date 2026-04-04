@@ -1,6 +1,5 @@
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
-import DeleteCourseButton from "../../components/delete-course-button";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -77,12 +76,7 @@ export default async function CoursesPage() {
                     <td>{formatDate(course.ngayBeGiang)}</td>
                     <td>{formatDate(course.ngaySatHach)}</td>
                     <td>{course.students?.length || 0}</td>
-                    <td>
-                      <DeleteCourseButton
-                        courseId={course.id}
-                        maKhoaHoc={course.maKhoaHoc || ""}
-                      />
-                    </td>
+                    <td>-</td>
                   </tr>
                 ))
               )}
