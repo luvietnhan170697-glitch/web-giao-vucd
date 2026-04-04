@@ -98,6 +98,7 @@ export async function POST(req: Request) {
     });
 
     let success = 0;
+    let duplicateMaDk = 0;
     const errors: string[] = [];
 
     for (const item of nguoiLxList) {
@@ -110,20 +111,18 @@ export async function POST(req: Request) {
           continue;
         }
 
-        await prisma.student.upsert({
+        const existedStudent = await prisma.student.findUnique({
           where: { maDk },
-          update: {
-            courseId: course.id,
-            hoVaTen: item?.HO_VA_TEN || "",
-            soCmt: item?.SO_CMT ? String(item.SO_CMT).trim() : null,
-            ngaySinh: parseDate(item?.NGAY_SINH),
-            gioiTinh: item?.GIOI_TINH || null,
-            soHoSo: hoSo?.SO_HO_SO ? String(hoSo.SO_HO_SO).trim() : null,
-            ngayNhanHoSo: parseDate(hoSo?.NGAY_NHAN_HOSO),
-            hangGplx: hoSo?.HANG_GPLX || item?.HANG_GPLX || null,
-            hangDaoTao: hoSo?.HANG_DAOTAO || null,
-          },
-          create: {
+        });
+
+        if (existedStudent) {
+          duplicateMaDk++;
+          errors.push(`Trùng MA_DK: ${maDk} - ${item?.HO_VA_TEN || "Không rõ tên"}`);
+          continue;
+        }
+
+        await prisma.student.create({
+          data: {
             courseId: course.id,
             maDk,
             hoVaTen: item?.HO_VA_TEN || "",
@@ -159,7 +158,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({
-      message: "Import XML thành công",
+      message: "Import XML hoàn tất",
       fileName: file.name,
       note,
       course: {
@@ -168,12 +167,13 @@ export async function POST(req: Request) {
       },
       total: nguoiLxList.length,
       success,
+      duplicateMaDk,
       failed: errors.length,
       errors,
     });
   } catch (error: any) {
     return NextResponse.json(
-      { error: error.message || "Lỗi import XML" },
+      { error: error?.message || "Lỗi import XML" },
       { status: 500 }
     );
   }

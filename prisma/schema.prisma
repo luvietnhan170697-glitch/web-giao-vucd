@@ -38,7 +38,7 @@ model Student {
 
   maDk               String?               @unique
   soHoSo             String?
-  soCmt              String?               @unique
+  soCmt              String?               
 
   hoVaTen            String
   ngaySinh           DateTime?
