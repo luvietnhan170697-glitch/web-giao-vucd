@@ -12,7 +12,7 @@ function parseDate(value?: string | null): Date | null {
 
   if (v.includes("-")) {
     const d = new Date(v);
-    return isNaN(d.getTime()) ? null : d;
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   if (/^\d{8}$/.test(v)) {
@@ -20,7 +20,13 @@ function parseDate(value?: string | null): Date | null {
     const mm = v.slice(4, 6);
     const dd = v.slice(6, 8);
     const d = new Date(`${yyyy}-${mm}-${dd}`);
-    return isNaN(d.getTime()) ? null : d;
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(v)) {
+    const [dd, mm, yyyy] = v.split("/");
+    const d = new Date(`${yyyy}-${mm}-${dd}`);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   return null;
@@ -31,6 +37,27 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
   return Array.isArray(value) ? value : [value];
 }
 
+function pickFirst(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    const text = String(value).trim();
+    if (text) return text;
+  }
+  return null;
+}
+
+function pickNumber(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function addMonths(date: Date, months: number): Date {
+  const d = new Date(date);
+  d.setMonth(d.getMonth() + months);
+  return d;
+}
+
 export async function POST(req: Request) {
   try {
     const formData = await req.formData();
@@ -38,10 +65,7 @@ export async function POST(req: Request) {
     const note = String(formData.get("note") || "");
 
     if (!file) {
-      return NextResponse.json(
-        { error: "Không có file XML" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Không có file XML" }, { status: 400 });
     }
 
     const xmlText = await file.text();
@@ -72,74 +96,147 @@ export async function POST(req: Request) {
       );
     }
 
+    const maKhoaHoc = pickFirst(khoaHoc.MA_KHOA_HOC);
+    if (!maKhoaHoc) {
+      return NextResponse.json(
+        { error: "Thiếu MA_KHOA_HOC trong XML" },
+        { status: 400 }
+      );
+    }
+
+    const tenKhoaHoc = pickFirst(khoaHoc.TEN_KHOA_HOC);
+    const maBci = pickFirst(khoaHoc.MA_BCI);
+    const hangDaoTao =
+      pickFirst(khoaHoc.MA_HANG_DAO_TAO, khoaHoc.HANG_GPLX);
+
     const course = await prisma.course.upsert({
       where: {
-        maKhoaHoc: String(khoaHoc.MA_KHOA_HOC),
+        maKhoaHoc,
       },
       update: {
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
-        maBci: khoaHoc.MA_BCI || null,
-        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
-        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
-        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
-        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
-        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
+        tenKhoaHoc,
+        maBci,
+        hangDaoTao,
+        ngayKhaiGiang: parseDate(pickFirst(khoaHoc.NGAY_KHAI_GIANG)),
+        ngayBeGiang: parseDate(pickFirst(khoaHoc.NGAY_BE_GIANG)),
+        ngaySatHach: parseDate(pickFirst(khoaHoc.NGAY_SAT_HACH)),
+        soHocSinh: pickNumber(khoaHoc.SO_HOC_SINH),
       },
       create: {
-        maKhoaHoc: String(khoaHoc.MA_KHOA_HOC),
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
-        maBci: khoaHoc.MA_BCI || null,
-        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
-        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
-        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
-        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
-        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
+        maKhoaHoc,
+        tenKhoaHoc,
+        maBci,
+        hangDaoTao,
+        ngayKhaiGiang: parseDate(pickFirst(khoaHoc.NGAY_KHAI_GIANG)),
+        ngayBeGiang: parseDate(pickFirst(khoaHoc.NGAY_BE_GIANG)),
+        ngaySatHach: parseDate(pickFirst(khoaHoc.NGAY_SAT_HACH)),
+        soHocSinh: pickNumber(khoaHoc.SO_HOC_SINH),
       },
     });
 
-    let success = 0;
+    let created = 0;
+    let updated = 0;
     let duplicateMaDk = 0;
     const errors: string[] = [];
 
     for (const item of nguoiLxList) {
       try {
         const hoSo = item?.HO_SO || {};
-        const maDk = item?.MA_DK ? String(item.MA_DK).trim() : null;
+        const maDk = pickFirst(item?.MA_DK);
 
         if (!maDk) {
-          errors.push(`Thiếu MA_DK ở học viên: ${item?.HO_VA_TEN || "Không rõ tên"}`);
+          errors.push(
+            `Thiếu MA_DK ở học viên: ${pickFirst(item?.HO_VA_TEN) || "Không rõ tên"}`
+          );
           continue;
         }
+
+        const ngayKhamSucKhoe = parseDate(
+          pickFirst(
+            item?.NGAY_KHAM_SUC_KHOE,
+            item?.NGAY_KSK,
+            hoSo?.NGAY_KHAM_SUC_KHOE,
+            hoSo?.NGAY_KSK
+          )
+        );
+
+        const ngayHetHanKhamSucKhoe = ngayKhamSucKhoe
+          ? addMonths(ngayKhamSucKhoe, 12)
+          : null;
+
+        const studentData = {
+          courseId: course.id,
+          maDk,
+          hoVaTen: pickFirst(item?.HO_VA_TEN) || "",
+          ngaySinh: parseDate(pickFirst(item?.NGAY_SINH)),
+          soCmt: pickFirst(
+            item?.SO_CMT,
+            item?.SO_CMND,
+            item?.SO_CCCD,
+            item?.CCCD
+          ),
+          soDienThoai: pickFirst(
+            item?.SO_DIEN_THOAI,
+            item?.DIEN_THOAI,
+            item?.SDT,
+            hoSo?.SO_DIEN_THOAI,
+            hoSo?.DIEN_THOAI
+          ),
+          gioiTinh: pickFirst(item?.GIOI_TINH),
+          soHoSo: pickFirst(hoSo?.SO_HO_SO),
+          ngayNhanHoSo: parseDate(pickFirst(hoSo?.NGAY_NHAN_HOSO)),
+          hangGplx: pickFirst(hoSo?.HANG_GPLX, item?.HANG_GPLX),
+          hangDaoTao: pickFirst(hoSo?.HANG_DAOTAO, item?.HANG_DAO_TAO),
+          giaoVien: pickFirst(
+            item?.GIAO_VIEN,
+            item?.TEN_GIAO_VIEN,
+            hoSo?.GIAO_VIEN,
+            hoSo?.TEN_GIAO_VIEN
+          ),
+          ctv: pickFirst(
+            item?.CTV,
+            item?.CONG_TAC_VIEN,
+            hoSo?.CTV,
+            hoSo?.CONG_TAC_VIEN
+          ),
+          ghiChu: pickFirst(
+            item?.GHI_CHU,
+            hoSo?.GHI_CHU,
+            note || null
+          ),
+          ngayKhamSucKhoe,
+          ngayHetHanKhamSucKhoe,
+        };
 
         const existedStudent = await prisma.student.findUnique({
           where: { maDk },
         });
 
         if (existedStudent) {
+          if (existedStudent.courseId === course.id) {
+            await prisma.student.update({
+              where: { maDk },
+              data: studentData,
+            });
+            updated++;
+            continue;
+          }
+
           duplicateMaDk++;
-          errors.push(`Trùng MA_DK: ${maDk} - ${item?.HO_VA_TEN || "Không rõ tên"}`);
+          errors.push(
+            `Trùng MA_DK ở khóa khác: ${maDk} - ${pickFirst(item?.HO_VA_TEN) || "Không rõ tên"}`
+          );
           continue;
         }
 
         await prisma.student.create({
-          data: {
-            courseId: course.id,
-            maDk,
-            hoVaTen: item?.HO_VA_TEN || "",
-            soCmt: item?.SO_CMT ? String(item.SO_CMT).trim() : null,
-            ngaySinh: parseDate(item?.NGAY_SINH),
-            gioiTinh: item?.GIOI_TINH || null,
-            soHoSo: hoSo?.SO_HO_SO ? String(hoSo.SO_HO_SO).trim() : null,
-            ngayNhanHoSo: parseDate(hoSo?.NGAY_NHAN_HOSO),
-            hangGplx: hoSo?.HANG_GPLX || item?.HANG_GPLX || null,
-            hangDaoTao: hoSo?.HANG_DAOTAO || null,
-          },
+          data: studentData,
         });
 
-        success++;
+        created++;
       } catch (e: any) {
         errors.push(
-          `Lỗi học viên ${item?.HO_VA_TEN || "Không rõ"}: ${e.message}`
+          `Lỗi học viên ${pickFirst(item?.HO_VA_TEN) || "Không rõ"}: ${e.message}`
         );
       }
     }
@@ -149,7 +246,7 @@ export async function POST(req: Request) {
         loaiFile: "XML",
         tenFile: file.name || "import-xml",
         tongSoDong: nguoiLxList.length,
-        thanhCong: success,
+        thanhCong: created + updated,
         thatBai: errors.length,
         ghiChu: errors.length
           ? errors.join(" | ").slice(0, 1000)
@@ -158,6 +255,7 @@ export async function POST(req: Request) {
     });
 
     return NextResponse.json({
+      ok: true,
       message: "Import XML hoàn tất",
       fileName: file.name,
       note,
@@ -166,7 +264,8 @@ export async function POST(req: Request) {
         tenKhoaHoc: course.tenKhoaHoc,
       },
       total: nguoiLxList.length,
-      success,
+      created,
+      updated,
       duplicateMaDk,
       failed: errors.length,
       errors,
