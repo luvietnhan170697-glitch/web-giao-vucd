@@ -35,7 +35,17 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 
 export async function POST(req: Request) {
   try {
-    const xmlText = await req.text();
+    const formData = await req.formData();
+const file = formData.get("file") as File;
+
+if (!file) {
+  return NextResponse.json(
+    { error: "Không có file XML" },
+    { status: 400 }
+  );
+}
+
+const xmlText = await file.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
