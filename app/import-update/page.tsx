@@ -4,9 +4,18 @@ import { useState } from "react";
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
 
+type ImportResult = {
+  message?: string;
+  total?: number;
+  success?: number;
+  failed?: number;
+  errors?: { row: number; error: string }[];
+  error?: string;
+};
+
 export default function ImportUpdatePage() {
   const [file, setFile] = useState<File | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit() {
@@ -135,4 +144,136 @@ export default function ImportUpdatePage() {
       <section className="section-spacing card">
         <div className="card-header">
           <h2 style={{ margin: 0, fontSize: 18 }}>Kết quả xử lý</h2>
-        </div
+        </div>
+
+        <div className="card-body">
+          {!result && (
+            <div style={{ color: "#64748b", fontSize: 14 }}>
+              Chưa có dữ liệu xử lý.
+            </div>
+          )}
+
+          {result?.error && (
+            <div
+              style={{
+                padding: 12,
+                borderRadius: 10,
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#b91c1c",
+                fontSize: 14,
+              }}
+            >
+              {result.error}
+            </div>
+          )}
+
+          {result && !result.error && (
+            <div style={{ display: "grid", gap: 16 }}>
+              <div className="form-grid">
+                <div className="card" style={{ padding: 16 }}>
+                  <div className="label">Tổng dòng</div>
+                  <div style={{ fontSize: 24, fontWeight: 700 }}>
+                    {result.total ?? 0}
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: 16 }}>
+                  <div className="label">Thành công</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#166534" }}>
+                    {result.success ?? 0}
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: 16 }}>
+                  <div className="label">Thất bại</div>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: "#b91c1c" }}>
+                    {result.failed ?? 0}
+                  </div>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 10,
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  fontSize: 14,
+                  color: "#334155",
+                }}
+              >
+                {result.message || "Đã xử lý xong file cập nhật."}
+              </div>
+
+              {result.errors && result.errors.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 600, marginBottom: 10 }}>
+                    Danh sách lỗi
+                  </div>
+
+                  <div
+                    style={{
+                      maxHeight: 320,
+                      overflow: "auto",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 10,
+                    }}
+                  >
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc" }}>
+                          <th
+                            style={{
+                              textAlign: "left",
+                              padding: 10,
+                              borderBottom: "1px solid #e2e8f0",
+                            }}
+                          >
+                            Dòng
+                          </th>
+                          <th
+                            style={{
+                              textAlign: "left",
+                              padding: 10,
+                              borderBottom: "1px solid #e2e8f0",
+                            }}
+                          >
+                            Nội dung lỗi
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {result.errors.map((item, index) => (
+                          <tr key={`${item.row}-${index}`}>
+                            <td
+                              style={{
+                                padding: 10,
+                                borderBottom: "1px solid #f1f5f9",
+                                width: 100,
+                              }}
+                            >
+                              {item.row}
+                            </td>
+                            <td
+                              style={{
+                                padding: 10,
+                                borderBottom: "1px solid #f1f5f9",
+                              }}
+                            >
+                              {item.error}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+    </DashboardShell>
+  );
+}
