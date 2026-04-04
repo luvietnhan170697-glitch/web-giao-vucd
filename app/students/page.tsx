@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
-import DeleteStudentButton from "../../components/delete-student-button";
 import DeleteInvalidStudentsCard from "../../components/delete-invalid-students-card";
 
 type CourseOption = {
@@ -318,17 +317,7 @@ export default function StudentsPage() {
                       <td>{student.ctv || "-"}</td>
                       <td>{formatDate(student.ngayKhamSucKhoe)}</td>
                       <td>{student.ghiChu || "-"}</td>
-                      <td>
-                        {isAdmin ? (
-                          <DeleteStudentButton
-                            studentId={student.id}
-                            maDk={student.maDk}
-                            hoVaTen={student.hoVaTen}
-                          />
-                        ) : (
-                          <span style={{ color: "#94a3b8", fontSize: 13 }}>-</span>
-                        )}
-                      </td>
+                      <td>-</td>
                     </tr>
                   ))
                 )}
