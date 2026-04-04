@@ -3,13 +3,13 @@ import { jwtVerify } from "jose";
 import { COOKIE_NAME } from "./lib/auth";
 import { hasApiAccess, hasPageAccess } from "./lib/permissions";
 
-const publicPaths = ["/login"];
+const publicPaths = ["/login", "/unauthorized"];
 const publicApiPaths = ["/api/auth/login"];
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
   if (!secret) {
-    throw new Error("Thiếu JWT_SECRET trong .env");
+    throw new Error("Thiếu JWT_SECRET");
   }
   return new TextEncoder().encode(secret);
 }
@@ -42,6 +42,13 @@ export async function middleware(req: NextRequest) {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
     const role = String(payload.role || "");
+
+    if (!role) {
+      if (pathname.startsWith("/api/")) {
+        return NextResponse.json({ error: "Token không hợp lệ" }, { status: 401 });
+      }
+      return NextResponse.redirect(new URL("/login", req.url));
+    }
 
     if (pathname.startsWith("/api/")) {
       if (!hasApiAccess(role, pathname)) {

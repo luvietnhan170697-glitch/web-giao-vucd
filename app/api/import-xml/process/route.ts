@@ -27,9 +27,63 @@ function toDate(value?: string | null) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-function asArray<T>(value: T | T[] | undefined | null): T[] {
-  if (!value) return [];
-  return Array.isArray(value) ? value : [value];
+function asText(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+}
+
+function pick(obj: any, keys: string[]) {
+  for (const key of keys) {
+    const value = obj?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== "") {
+      return value;
+    }
+  }
+  return "";
+}
+
+function findStudentRows(node: any): any[] {
+  if (!node) return [];
+
+  if (Array.isArray(node)) {
+    const directRows = node.filter(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        (
+          pick(item, ["MA_DK", "ma_dk", "MaDK", "Mã_đk", "maDk"]) ||
+          pick(item, ["SO_CMT", "so_cmt", "SoCmt", "CCCD", "cccd"]) ||
+          pick(item, ["HO_VA_TEN", "ho_va_ten", "HoVaTen", "HO_TEN", "ho_ten"])
+        )
+    );
+
+    if (directRows.length > 0) {
+      return directRows;
+    }
+
+    for (const item of node) {
+      const found = findStudentRows(item);
+      if (found.length > 0) return found;
+    }
+    return [];
+  }
+
+  if (typeof node === "object") {
+    const selfLooksLikeStudent =
+      pick(node, ["MA_DK", "ma_dk", "MaDK", "Mã_đk", "maDk"]) ||
+      pick(node, ["SO_CMT", "so_cmt", "SoCmt", "CCCD", "cccd"]);
+
+    if (selfLooksLikeStudent) {
+      return [node];
+    }
+
+    for (const key of Object.keys(node)) {
+      const found = findStudentRows(node[key]);
+      if (found.length > 0) return found;
+    }
+  }
+
+  return [];
 }
 
 export async function POST(req: Request) {
@@ -64,21 +118,13 @@ export async function POST(req: Request) {
 
     const parsed = parser.parse(xmlText);
 
-    // =========================
-    // QUAN TRỌNG:
-    // Bạn sửa đoạn này theo đúng cấu trúc XML thật của bạn.
-    // Ở đây tôi để mẫu khá an toàn: tìm mảng học viên ở nhiều key phổ biến.
-    // =========================
-    const studentsRaw =
-      asArray(parsed?.DanhSachHocVien?.HocVien) ||
-      asArray(parsed?.DanhSach?.HocVien) ||
-      asArray(parsed?.HocVien);
+    const studentsRaw = findStudentRows(parsed);
 
     if (!studentsRaw.length) {
       return NextResponse.json(
         {
           error:
-            "XML đã đọc được nhưng chưa map đúng danh sách học viên. Cần chỉnh key XML trong route process.",
+            "Không tìm thấy danh sách học viên trong XML. Cần xem lại key dữ liệu XML thực tế.",
         },
         { status: 400 }
       );
@@ -89,11 +135,22 @@ export async function POST(req: Request) {
     let skipped = 0;
 
     for (const item of studentsRaw) {
-      const maDk = String(item?.MA_DK || item?.ma_dk || item?.MaDK || "").trim();
-      const soCmt = String(item?.SO_CMT || item?.so_cmt || item?.SoCmt || "").trim();
-      const hoVaTen = String(
-        item?.HO_VA_TEN || item?.ho_va_ten || item?.HoVaTen || item?.HO_TEN || ""
-      ).trim();
+      const maDk = asText(
+        pick(item, ["MA_DK", "ma_dk", "MaDK", "Mã_đk", "maDk"])
+      );
+      const soCmt = asText(
+        pick(item, ["SO_CMT", "so_cmt", "SoCmt", "CCCD", "cccd"])
+      );
+      const hoVaTen = asText(
+        pick(item, [
+          "HO_VA_TEN",
+          "ho_va_ten",
+          "HoVaTen",
+          "HO_TEN",
+          "ho_ten",
+          "HoTen",
+        ])
+      );
 
       if (!maDk || !hoVaTen) {
         skipped++;
@@ -101,23 +158,37 @@ export async function POST(req: Request) {
       }
 
       const ngaySinh = toDate(
-        item?.NGAY_SINH || item?.ngay_sinh || item?.NgaySinh || null
+        asText(
+          pick(item, ["NGAY_SINH", "ngay_sinh", "NgaySinh", "ngaySinh"])
+        )
       );
 
-      const soDienThoai = String(
-        item?.SO_DIEN_THOAI || item?.so_dien_thoai || item?.SoDienThoai || ""
-      ).trim();
+      const soDienThoai = asText(
+        pick(item, [
+          "SO_DIEN_THOAI",
+          "so_dien_thoai",
+          "SoDienThoai",
+          "DIEN_THOAI",
+          "dien_thoai",
+        ])
+      );
 
-      const hangGplx = String(
-        item?.HANG_GPLX || item?.hang_gplx || item?.HangGPLX || ""
-      ).trim();
+      const hangGplx = asText(
+        pick(item, ["HANG_GPLX", "hang_gplx", "HangGPLX"])
+      );
 
-      const hangDaoTao = String(
-        item?.HANG_DAO_TAO || item?.hang_dao_tao || item?.HangDaoTao || ""
-      ).trim();
+      const hangDaoTao = asText(
+        pick(item, ["HANG_DAO_TAO", "hang_dao_tao", "HangDaoTao"])
+      );
 
       const ngayNhanHoSo = toDate(
-        item?.NGAY_NHAN_HO_SO || item?.ngay_nhan_ho_so || item?.NgayNhanHoSo || null
+        asText(
+          pick(item, [
+            "NGAY_NHAN_HO_SO",
+            "ngay_nhan_ho_so",
+            "NgayNhanHoSo",
+          ])
+        )
       );
 
       const existing = await prisma.student.findFirst({
@@ -136,7 +207,7 @@ export async function POST(req: Request) {
             maDk,
             soCmt: soCmt || existing.soCmt,
             hoVaTen,
-            ngaySinh,
+            ngaySinh: ngaySinh || existing.ngaySinh,
             soDienThoai: soDienThoai || existing.soDienThoai,
             hangGplx: hangGplx || existing.hangGplx,
             hangDaoTao: hangDaoTao || existing.hangDaoTao,
@@ -163,7 +234,6 @@ export async function POST(req: Request) {
       }
     }
 
-    // Xử lý xong thì xóa file khỏi Blob để tránh lưu XML nhạy cảm
     await del(pathname);
 
     return NextResponse.json({
