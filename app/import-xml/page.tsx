@@ -1,14 +1,27 @@
 "use client";
 
 import { useState } from "react";
+import { upload } from "@vercel/blob/client";
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
+
+type ProcessResult = {
+  ok?: boolean;
+  message?: string;
+  total?: number;
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  error?: string;
+};
 
 export default function ImportXmlPage() {
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [uploading, setUploading] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<ProcessResult | null>(null);
 
   async function handleImport() {
     if (!file) {
@@ -17,67 +30,83 @@ export default function ImportXmlPage() {
     }
 
     try {
-      setLoading(true);
+      setUploading(true);
+      setProcessing(false);
+      setProgress(0);
       setResult(null);
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("note", note);
+      const safeName = file.name.replace(/\s+/g, "-");
+      const pathname = `imports/xml/${Date.now()}-${safeName}`;
 
-      const res = await fetch("/api/import-xml", {
-        method: "POST",
-        body: formData,
+      const blob = await upload(pathname, file, {
+        access: "private",
+        handleUploadUrl: "/api/blob/upload-xml",
+        multipart: true,
+        clientPayload: JSON.stringify({
+          originalName: file.name,
+          note,
+        }),
+        onUploadProgress: ({ percentage }) => {
+          setProgress(Math.round(percentage));
+        },
       });
 
-      const contentType = res.headers.get("content-type") || "";
+      setUploading(false);
+      setProcessing(true);
+
+      const res = await fetch("/api/import-xml/process", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pathname: blob.pathname,
+          note,
+          originalName: file.name,
+        }),
+      });
+
+      const data = await res.json();
 
       if (!res.ok) {
-        if (contentType.includes("application/json")) {
-          const err = await res.json();
-          throw new Error(err.error || err.message || "Import XML thất bại");
-        } else {
-          const text = await res.text();
-          throw new Error(text || "Import XML thất bại");
-        }
+        throw new Error(data?.error || "Xử lý XML thất bại");
       }
 
-      if (contentType.includes("application/json")) {
-        const data = await res.json();
-        setResult(data);
-      } else {
-        const text = await res.text();
-        setResult({ message: text || "Import XML thành công" });
-      }
+      setResult(data);
     } catch (error: any) {
       setResult({
         error: error?.message || "Có lỗi xảy ra khi import XML",
       });
     } finally {
-      setLoading(false);
+      setUploading(false);
+      setProcessing(false);
     }
   }
 
   function handleClear() {
     setFile(null);
     setNote("");
+    setProgress(0);
     setResult(null);
 
     const input = document.getElementById("xml-file-input") as HTMLInputElement | null;
     if (input) input.value = "";
   }
 
+  const busy = uploading || processing;
+
   return (
     <DashboardShell>
       <Header
         title="Import XML"
-        subtitle="Tải file XML để thêm hoặc cập nhật dữ liệu học viên."
+        subtitle="Upload file XML lớn qua Blob rồi xử lý trên server."
       />
 
       <section className="card">
         <div className="card-header">
           <h2 style={{ margin: 0, fontSize: 18 }}>Tải file XML</h2>
           <p className="page-subtitle">
-            Chọn file đúng định dạng để hệ thống xử lý dữ liệu.
+            File sẽ được upload trực tiếp lên Blob để tránh lỗi giới hạn dung lượng.
           </p>
         </div>
 
@@ -110,23 +139,52 @@ export default function ImportXmlPage() {
 
           <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
             <button
-              type="button"
               className="btn btn-primary"
               onClick={handleImport}
-              disabled={loading}
+              disabled={busy || !file}
             >
-              {loading ? "Đang import..." : "Bắt đầu import"}
+              {uploading
+                ? `Đang upload ${progress}%...`
+                : processing
+                ? "Đang xử lý XML..."
+                : "Bắt đầu import"}
             </button>
 
             <button
-              type="button"
               className="btn btn-secondary"
               onClick={handleClear}
-              disabled={loading}
+              disabled={busy}
             >
               Xóa chọn
             </button>
           </div>
+
+          {(uploading || processing) && (
+            <div style={{ marginTop: 16 }}>
+              <div
+                style={{
+                  height: 10,
+                  background: "#e2e8f0",
+                  borderRadius: 999,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    width: `${uploading ? progress : 100}%`,
+                    height: "100%",
+                    background: "var(--primary)",
+                    transition: "width 0.2s ease",
+                  }}
+                />
+              </div>
+              <div style={{ marginTop: 8, fontSize: 14, color: "#64748b" }}>
+                {uploading
+                  ? `Đang upload file lên Blob: ${progress}%`
+                  : "Upload xong, đang xử lý dữ liệu XML..."}
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
