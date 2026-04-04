@@ -22,6 +22,8 @@ export async function GET(req: NextRequest) {
         { hoVaTen: { contains: q, mode: "insensitive" } },
         { soCmt: { contains: q, mode: "insensitive" } },
         { soDienThoai: { contains: q, mode: "insensitive" } },
+        { giaoVien: { contains: q, mode: "insensitive" } },
+        { ctv: { contains: q, mode: "insensitive" } },
       ];
     }
 
@@ -34,6 +36,12 @@ export async function GET(req: NextRequest) {
         where,
         include: {
           course: true,
+          medicalChecks: {
+            orderBy: {
+              ngayKham: "desc",
+            },
+            take: 1,
+          },
         },
         orderBy: {
           createdAt: "desc",
@@ -60,9 +68,10 @@ export async function GET(req: NextRequest) {
         ngaySinh: s.ngaySinh,
         soCmt: s.soCmt || "",
         soDienThoai: s.soDienThoai || "",
+        giaoVien: s.giaoVien || "",
+        ctv: s.ctv || "",
         ghiChu: s.ghiChu || "",
-        giaoVien: "",
-        ctv: "",
+        ngayKhamSucKhoe: s.medicalChecks?.[0]?.ngayKham || null,
         courseId: s.courseId || "",
         course: s.course
           ? {

@@ -17,9 +17,10 @@ type StudentItem = {
   ngaySinh: string | null;
   soCmt: string;
   soDienThoai: string;
-  ghiChu: string;
   giaoVien: string;
   ctv: string;
+  ghiChu: string;
+  ngayKhamSucKhoe: string | null;
   courseId: string;
   course: {
     id: string;
@@ -55,7 +56,10 @@ export default function StudentsPage() {
       if (nextQ.trim()) params.set("q", nextQ.trim());
       if (nextCourseId) params.set("courseId", nextCourseId);
 
-      const res = await fetch(`/api/students?${params.toString()}`, {
+      const query = params.toString();
+      const url = query ? `/api/students?${query}` : "/api/students";
+
+      const res = await fetch(url, {
         method: "GET",
         cache: "no-store",
       });
@@ -101,7 +105,9 @@ export default function StudentsPage() {
         <div className="card-body">
           <div className="form-grid">
             <div>
-              <label className="label">Tìm theo MA_DK / Họ tên / CCCD</label>
+              <label className="label">
+                Tìm theo MA_DK / Họ tên / CCCD / SĐT / Giáo viên / CTV
+              </label>
               <input
                 className="input"
                 placeholder="Nhập từ khóa..."
@@ -123,7 +129,7 @@ export default function StudentsPage() {
                 <option value="">Tất cả khóa học</option>
                 {courses.map((course) => (
                   <option key={course.id} value={course.id}>
-                    {course.maKhoaHoc || course.tenKhoaHoc || course.id}
+                    {course.tenKhoaHoc || ""}
                   </option>
                 ))}
               </select>
@@ -169,7 +175,7 @@ export default function StudentsPage() {
         </div>
 
         <div className="card-body table-wrap">
-          <table className="table" style={{ minWidth: 1450 }}>
+          <table className="table" style={{ minWidth: 1700 }}>
             <thead>
               <tr>
                 <th>MA_DK</th>
@@ -177,7 +183,8 @@ export default function StudentsPage() {
                 <th>Ngày sinh</th>
                 <th>CCCD</th>
                 <th>Khóa học</th>
-                <th>Số điện thoại</th>
+                <th>SĐT</th>
+                <th>Ngày khám sức khỏe</th>
                 <th>Giáo viên</th>
                 <th>CTV</th>
                 <th>Ghi chú</th>
@@ -186,7 +193,7 @@ export default function StudentsPage() {
             <tbody>
               {!loading && students.length === 0 ? (
                 <tr>
-                  <td colSpan={9} style={{ textAlign: "center", padding: 24 }}>
+                  <td colSpan={10} style={{ textAlign: "center", padding: 24 }}>
                     Chưa có dữ liệu học viên
                   </td>
                 </tr>
@@ -197,12 +204,9 @@ export default function StudentsPage() {
                     <td>{student.hoVaTen}</td>
                     <td>{formatDate(student.ngaySinh)}</td>
                     <td>{student.soCmt}</td>
-                    <td>
-                      {student.course?.maKhoaHoc ||
-                        student.course?.tenKhoaHoc ||
-                        ""}
-                    </td>
+                    <td>{student.course?.tenKhoaHoc || ""}</td>
                     <td>{student.soDienThoai}</td>
+                    <td>{formatDate(student.ngayKhamSucKhoe)}</td>
                     <td>{student.giaoVien || "-"}</td>
                     <td>{student.ctv || "-"}</td>
                     <td>{student.ghiChu}</td>
