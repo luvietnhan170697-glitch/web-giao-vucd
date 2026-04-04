@@ -3,27 +3,36 @@ import Header from "../../components/header";
 
 const demoStudents = [
   {
-    maDk: "DK001",
+    maDk: "77008-20260128-092912",
     hoTen: "Nguyễn Văn A",
+    ngaySinh: "12/03/2001",
     cccd: "079201000001",
     khoaHoc: "B2-K01",
-    soDienThoai: "0900000001",
+    soDienThoai: "0794423444",
+    giaoVien: "Thầy Minh",
+    ctv: "CTV Lan",
     trangThai: "Đang học",
   },
   {
-    maDk: "DK002",
+    maDk: "77008-20260127-161459",
     hoTen: "Trần Thị B",
+    ngaySinh: "25/08/2000",
     cccd: "079201000002",
     khoaHoc: "B2-K01",
-    soDienThoai: "0900000002",
+    soDienThoai: "0656562454",
+    giaoVien: "Thầy Hải",
+    ctv: "CTV Hương",
     trangThai: "Chờ thi",
   },
   {
-    maDk: "DK003",
+    maDk: "77008-20260126-101010",
     hoTen: "Lê Văn C",
+    ngaySinh: "03/11/1999",
     cccd: "079201000003",
     khoaHoc: "C-K03",
     soDienThoai: "0900000003",
+    giaoVien: "Thầy Nam",
+    ctv: "CTV Phúc",
     trangThai: "Hoàn thành",
   },
 ];
@@ -43,6 +52,7 @@ export default function StudentsPage() {
               <label className="label">Tìm theo MA_DK / Họ tên / CCCD</label>
               <input className="input" placeholder="Nhập từ khóa..." />
             </div>
+
             <div>
               <label className="label">Khóa học</label>
               <select className="select" defaultValue="">
@@ -64,15 +74,19 @@ export default function StudentsPage() {
         <div className="card-header">
           <h2 style={{ margin: 0, fontSize: 18 }}>Danh sách hiện có</h2>
         </div>
+
         <div className="card-body table-wrap">
-          <table className="table">
+          <table className="table" style={{ minWidth: 1250 }}>
             <thead>
               <tr>
                 <th>MA_DK</th>
                 <th>Họ tên</th>
+                <th>Ngày sinh</th>
                 <th>CCCD</th>
                 <th>Khóa học</th>
                 <th>Số điện thoại</th>
+                <th>Giáo viên</th>
+                <th>CTV</th>
                 <th>Trạng thái</th>
               </tr>
             </thead>
@@ -81,9 +95,12 @@ export default function StudentsPage() {
                 <tr key={student.maDk}>
                   <td>{student.maDk}</td>
                   <td>{student.hoTen}</td>
+                  <td>{student.ngaySinh}</td>
                   <td>{student.cccd}</td>
                   <td>{student.khoaHoc}</td>
                   <td>{student.soDienThoai}</td>
+                  <td>{student.giaoVien}</td>
+                  <td>{student.ctv}</td>
                   <td>
                     {student.trangThai === "Hoàn thành" ? (
                       <span className="badge badge-success">{student.trangThai}</span>

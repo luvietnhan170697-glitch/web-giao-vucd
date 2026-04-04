@@ -54,7 +54,9 @@ export default function HomePage() {
               <div style={{ fontWeight: 700, fontSize: 18 }}>
                 Xem và tra cứu dữ liệu
               </div>
-              <div className="stat-note">Tìm theo MA_DK, họ tên, CMT...</div>
+              <div className="stat-note">
+                Tìm theo MA_DK, họ tên, CCCD, giáo viên, CTV
+              </div>
             </a>
 
             <a
@@ -98,7 +100,21 @@ export default function HomePage() {
             </a>
 
             <a
-              href="/export-madk"
+              href="/import-update"
+              className="card stat-card"
+              style={{ display: "block" }}
+            >
+              <div className="stat-label">Import cập nhật</div>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>
+                Cập nhật dữ liệu học viên
+              </div>
+              <div className="stat-note">
+                Số điện thoại, sức khỏe, giáo viên, CTV, ghi chú
+              </div>
+            </a>
+
+            <a
+              href="/export-ma-dk"
               className="card stat-card"
               style={{ display: "block" }}
             >
@@ -107,7 +123,7 @@ export default function HomePage() {
                 Xuất dữ liệu truy vấn
               </div>
               <div className="stat-note">
-                Xuất theo MA_DK hoặc mapping
+                Xuất theo MA_DK, mapping hoặc file danh sách
               </div>
             </a>
           </div>
@@ -123,6 +139,7 @@ export default function HomePage() {
             <li>Import XML để tạo dữ liệu nền.</li>
             <li>Import tốt nghiệp để cập nhật kết quả từng nội dung.</li>
             <li>Import sát hạch thực hành để cập nhật trạng thái cuối.</li>
+            <li>Import cập nhật để bổ sung số điện thoại, sức khỏe, giáo viên, CTV, ghi chú.</li>
             <li>Export theo MA_DK để đối chiếu và truy vấn.</li>
           </ol>
         </div>

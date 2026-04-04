@@ -44,6 +44,8 @@ model Student {
   ngaySinh           DateTime?
   gioiTinh           String?
   soDienThoai        String?
+  giaoVien           String?
+  ctv                String?
   ghiChu             String?
 
   hangGplx           String?

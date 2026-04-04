@@ -17,6 +17,7 @@ const menus = [
   { href: "/import-graduation", label: "Import tốt nghiệp", icon: FileIcon },
   { href: "/import-practical", label: "Import sát hạch", icon: FileIcon },
   { href: "/export-ma-dk", label: "Export MA_DK", icon: DownloadIcon },
+{ href: "/import-update", label: "Import cập nhật thông tin", icon: FileIcon },
 ];
 
 export default function Sidebar() {

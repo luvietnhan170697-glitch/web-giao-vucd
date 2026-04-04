@@ -1,81 +1,58 @@
 import { NextRequest } from "next/server";
+import { PrismaClient } from "@prisma/client";
 import * as XLSX from "xlsx";
-import { prisma } from "../../../lib/prisma";
 
-function normalizeValue(value: unknown) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
-}
+const prisma = new PrismaClient();
 
-function normalizeMaDK(value: unknown) {
-  return normalizeValue(value).toUpperCase();
-}
-
-function getCell(row: Record<string, unknown>, acceptedKeys: string[]) {
-  for (const key of Object.keys(row)) {
-    const normalizedKey = key.trim().toLowerCase();
-    if (acceptedKeys.includes(normalizedKey)) {
-      return row[key];
-    }
-  }
-  return "";
+function formatDate(value: Date | null | undefined) {
+  if (!value) return "";
+  const d = new Date(value);
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
 }
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
+
+    const mode = String(formData.get("mode") || "");
+    const format = String(formData.get("format") || "xlsx");
+    const textValue = String(formData.get("textValue") || "");
     const file = formData.get("file") as File | null;
 
-    if (!file) {
-      return Response.json(
-        { error: "Vui lòng upload file Excel" },
-        { status: 400 }
-      );
+    let maDkList: string[] = [];
+
+    if (mode === "ma_dk" && textValue) {
+      maDkList = textValue
+        .split("\n")
+        .map((x) => x.trim())
+        .filter(Boolean);
     }
 
-    const bytes = await file.arrayBuffer();
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheetName = workbook.SheetNames[0];
+    if (mode === "file" && file) {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const workbook = XLSX.read(buffer, { type: "buffer" });
 
-    if (!sheetName) {
-      return Response.json(
-        { error: "File Excel không có sheet nào" },
-        { status: 400 }
-      );
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, {
+        defval: "",
+      });
+
+      maDkList = json
+        .map((row) => String(row.ma_dk || row.MA_DK || row.maDk || "").trim())
+        .filter(Boolean);
     }
 
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
-      defval: "",
-    });
-
-    if (!rows.length) {
-      return Response.json(
-        { error: "File Excel trống" },
-        { status: 400 }
-      );
+    if (maDkList.length === 0) {
+      return new Response("Không có dữ liệu MA_DK", { status: 400 });
     }
-
-    const maDKList = rows
-      .map((row) => normalizeMaDK(getCell(row, ["ma_dk", "madk", "ma dk"])))
-      .filter(Boolean);
-
-    if (!maDKList.length) {
-      return Response.json(
-        {
-          error: "File phải có cột ma_dk",
-          debug_columns: Object.keys(rows[0] || {}),
-        },
-        { status: 400 }
-      );
-    }
-
-    const uniqueMaDKList = [...new Set(maDKList)];
 
     const students = await prisma.student.findMany({
       where: {
         maDk: {
-          in: uniqueMaDKList,
+          in: maDkList,
         },
       },
       include: {
@@ -84,98 +61,78 @@ export async function POST(req: NextRequest) {
           orderBy: { createdAt: "desc" },
           take: 1,
         },
-        graduationResults: {
-          orderBy: { ngayThi: "desc" },
-          take: 1,
-        },
-        practicalExams: {
-          orderBy: { ngayThi: "desc" },
-          take: 1,
-        },
+      },
+      orderBy: {
+        createdAt: "desc",
       },
     });
 
-    const studentMap = new Map(
-      students.map((student) => [normalizeMaDK(student.maDk), student])
-    );
-
-    const exportRows = maDKList.map((maDK) => {
-      const student = studentMap.get(maDK);
-
-      if (!student) {
-        return {
-          ma_dk: maDK,
-          ho_ten: "",
-          cccd: "",
-          so_dien_thoai: "",
-          khoa_hoc: "",
-          ngay_kham_suc_khoe: "",
-          ghi_chu_suc_khoe: "",
-          ngay_thi_tot_nghiep: "",
-          ket_qua_tot_nghiep: "",
-          noi_dung_rot_tot_nghiep: "",
-          ngay_thi_sat_hach: "",
-          ket_qua_sat_hach: "",
-          noi_dung_rot_sat_hach: "",
-          ghi_chu: "Không tìm thấy học viên",
-        };
-      }
-
-      const medical = student.medicalChecks?.[0];
-      const graduation = student.graduationResults?.[0];
-      const practical = student.practicalExams?.[0];
+    const exportRows = students.map((s) => {
+      const latestMedical = s.medicalChecks[0];
 
       return {
-        ma_dk: student.maDk ?? "",
-        ho_ten: student.hoVaTen ?? "",
-        cccd: student.soCmt ?? "",
-        so_dien_thoai: student.soDienThoai ?? "",
-        khoa_hoc: student.course?.tenKhoaHoc ?? "",
-        ngay_kham_suc_khoe: medical?.ngayKham
-          ? new Date(medical.ngayKham).toLocaleDateString("vi-VN")
-          : "",
-        ghi_chu_suc_khoe: medical?.ghiChu ?? "",
-        ngay_thi_tot_nghiep: graduation?.ngayThi
-          ? new Date(graduation.ngayThi).toLocaleDateString("vi-VN")
-          : "",
-        ket_qua_tot_nghiep: graduation?.ketQua ?? "",
-        noi_dung_rot_tot_nghiep: graduation?.noiDungRot ?? "",
-        ngay_thi_sat_hach: practical?.ngayThi
-          ? new Date(practical.ngayThi).toLocaleDateString("vi-VN")
-          : "",
-        ket_qua_sat_hach: practical?.ketQua ?? "",
-        noi_dung_rot_sat_hach: practical?.noiDungRot ?? "",
-        ghi_chu: student.ghiChu ?? "",
+        ma_dk: s.maDk || "",
+        so_ho_so: s.soHoSo || "",
+        so_cmt: s.soCmt || "",
+        ho_va_ten: s.hoVaTen || "",
+        ngay_sinh: formatDate(s.ngaySinh),
+        so_dien_thoai: s.soDienThoai || "",
+        ghi_chu: s.ghiChu || "",
+        hang_gplx: s.hangGplx || "",
+        hang_dao_tao: s.hangDaoTao || "",
+        ngay_nhan_ho_so: formatDate(s.ngayNhanHoSo),
+        ma_khoa_hoc: s.course?.maKhoaHoc || "",
+        ten_khoa_hoc: s.course?.tenKhoaHoc || "",
+        ngay_kham_suc_khoe: formatDate(latestMedical?.ngayKham),
+        ngay_het_han_suc_khoe: formatDate(latestMedical?.ngayHetHan),
       };
     });
 
-    const outWorkbook = XLSX.utils.book_new();
-    const outSheet = XLSX.utils.json_to_sheet(exportRows);
+    if (exportRows.length === 0) {
+      return new Response("Không tìm thấy học viên phù hợp", { status: 404 });
+    }
 
-    XLSX.utils.book_append_sheet(outWorkbook, outSheet, "Export_MADK");
+    if (format === "csv") {
+      const header = Object.keys(exportRows[0]).join(",");
+      const rows = exportRows.map((row) =>
+        Object.values(row)
+          .map((value) => {
+            const str = String(value ?? "");
+            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          })
+          .join(",")
+      );
 
-    const outputBuffer = XLSX.write(outWorkbook, {
+      const csv = [header, ...rows].join("\n");
+
+      return new Response(csv, {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": 'attachment; filename="export-ma-dk.csv"',
+        },
+      });
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(exportRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "DATA");
+
+    const buffer = XLSX.write(workbook, {
       type: "buffer",
       bookType: "xlsx",
     });
 
-    return new Response(outputBuffer, {
-      status: 200,
+    return new Response(buffer, {
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         "Content-Disposition": 'attachment; filename="export-ma-dk.xlsx"',
       },
     });
-  } catch (error) {
-    console.error("EXPORT_MADK_ERROR:", error);
-
-    return Response.json(
-      {
-        error: "Lỗi export theo MA_DK",
-        detail: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    return new Response(error?.message || "Lỗi server", { status: 500 });
   }
 }
