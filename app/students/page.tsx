@@ -90,9 +90,8 @@ export default async function StudentsPage() {
                   <td>{student.maDk || "-"}</td>
                   <td>{student.hoVaTen || "-"}</td>
                   <td>{formatDate(student.ngaySinh)}</td>
-                  <td>{student.soDienThoai || "-"}</td>
-                  <td>{student.course?.maKhoaHoc || "-"}</td>
                   <td>{student.course?.tenKhoaHoc || "-"}</td>
+                  <td>{student.soDienThoai || "-"}</td>
                   <td>{student.giaoVien || "-"}</td>
                   <td>{student.ctv || "-"}</td>
                   <td>{student.ghiChu || "-"}</td>
