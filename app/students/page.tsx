@@ -38,7 +38,7 @@ export default async function StudentsPage() {
         <div className="card-body">
           <div className="form-grid">
             <div>
-              <label className="label">Tìm theo MA_DK / Họ tên / Số CMT</label>
+              <label className="label">Tìm theo MA_DK / Họ tên / CCCD</label>
               <input className="input" placeholder="Nhập từ khóa..." />
             </div>
 
@@ -70,12 +70,13 @@ export default async function StudentsPage() {
         </div>
 
         <div className="card-body table-wrap">
-          <table className="table" style={{ minWidth: 1400 }}>
+          <table className="table" style={{ minWidth: 1550 }}>
             <thead>
               <tr>
                 <th>MA_DK</th>
                 <th>Họ và tên</th>
                 <th>Ngày sinh</th>
+                <th>CCCD / Số CMT</th>
                 <th>Số điện thoại</th>
                 <th>Khóa học</th>
                 <th>Tên khóa học</th>
@@ -90,8 +91,10 @@ export default async function StudentsPage() {
                   <td>{student.maDk || "-"}</td>
                   <td>{student.hoVaTen || "-"}</td>
                   <td>{formatDate(student.ngaySinh)}</td>
-                  <td>{student.course?.tenKhoaHoc || "-"}</td>
+                  <td>{student.soCmt || "-"}</td>
                   <td>{student.soDienThoai || "-"}</td>
+                  <td>{student.course?.maKhoaHoc || "-"}</td>
+                  <td>{student.course?.tenKhoaHoc || "-"}</td>
                   <td>{student.giaoVien || "-"}</td>
                   <td>{student.ctv || "-"}</td>
                   <td>{student.ghiChu || "-"}</td>
