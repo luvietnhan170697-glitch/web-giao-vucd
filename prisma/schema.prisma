@@ -35,23 +35,30 @@ model Course {
 }
 
 model Student {
-  id            String   @id @default(cuid())
-  courseId      String?
+  id               String   @id @default(cuid())
+  courseId         String?
 
-  maDk          String?  @unique
-  hoVaTen       String?
-  soCmt         String?
-  ngaySinh      DateTime?
-  gioiTinh      String?
+  maDk             String?  @unique
+  hoVaTen          String?
+  soCmt            String?
+  ngaySinh         DateTime?
+  gioiTinh         String?
 
-  soHoSo        String?
-  ngayNhanHoSo  DateTime?
+  soHoSo           String?
+  ngayNhanHoSo     DateTime?
 
-  hangGplx      String?
-  hangDaoTao    String?
+  hangGplx         String?
+  hangDaoTao       String?
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  soDienThoai      String?
+  giaoVien         String?
+  ctv              String?
+  ghiChu           String?
+  ngayKhamSucKhoe  DateTime?
+  ngayHetHan       DateTime?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   course              Course?               @relation(fields: [courseId], references: [id])
   medicalChecks       MedicalCheck[]
