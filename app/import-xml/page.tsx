@@ -5,25 +5,83 @@ import { upload } from "@vercel/blob/client";
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
 
+type PreviewRow = {
+  maDk: string;
+  hoVaTen: string;
+  soCmt: string;
+  ngaySinh: string;
+  status: "create" | "update" | "invalid";
+};
+
+type PreviewResult = {
+  ok?: boolean;
+  error?: string;
+  fileName?: string;
+  course?: {
+    maKhoaHoc?: string;
+    tenKhoaHoc?: string;
+    hangDaoTao?: string | null;
+    ngayKhaiGiang?: string | null;
+    ngayBeGiang?: string | null;
+  };
+  summary?: {
+    total: number;
+    willCreate: number;
+    willUpdate: number;
+    invalid: number;
+  };
+  previewRows?: PreviewRow[];
+  errors?: string[];
+};
+
 type ProcessResult = {
   ok?: boolean;
   message?: string;
   total?: number;
   created?: number;
   updated?: number;
-  skipped?: number;
+  failed?: number;
+  errors?: string[];
   error?: string;
 };
+
+function statusLabel(status: PreviewRow["status"]) {
+  if (status === "create") return "Mới";
+  if (status === "update") return "Cập nhật";
+  return "Lỗi";
+}
 
 export default function ImportXmlPage() {
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
+
   const [uploading, setUploading] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [processing, setProcessing] = useState(false);
+
   const [progress, setProgress] = useState(0);
+  const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<ProcessResult | null>(null);
 
-  async function handleImport() {
+  async function uploadToBlob(currentFile: File) {
+    const safeName = currentFile.name.replace(/\s+/g, "-");
+    const pathname = `imports/xml/${Date.now()}-${safeName}`;
+
+    await upload(pathname, currentFile, {
+      access: "private",
+      handleUploadUrl: "/api/blob/upload-xml",
+      multipart: true,
+      clientPayload: JSON.stringify({
+        originalName: currentFile.name,
+        note,
+      }),
+      onUploadProgress: ({ percentage }) => {
+        setProgress(Math.round(percentage));
+      },
+    });
+  }
+
+  async function handlePreview() {
     if (!file) {
       alert("Vui lòng chọn file XML trước.");
       return;
@@ -31,45 +89,71 @@ export default function ImportXmlPage() {
 
     try {
       setUploading(true);
+      setChecking(false);
       setProcessing(false);
       setProgress(0);
+      setPreview(null);
       setResult(null);
 
-      const safeName = file.name.replace(/\s+/g, "-");
-      const pathname = `imports/xml/${Date.now()}-${safeName}`;
-
-      const blob = await upload(pathname, file, {
-        access: "private",
-        handleUploadUrl: "/api/blob/upload-xml",
-        multipart: true,
-        clientPayload: JSON.stringify({
-          originalName: file.name,
-          note,
-        }),
-        onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage));
-        },
-      });
+      await uploadToBlob(file);
 
       setUploading(false);
-      setProcessing(true);
+      setChecking(true);
 
-      const res = await fetch("/api/import-xml/process", {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/import-xml/preview", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          pathname: blob.pathname,
-          note,
-          originalName: file.name,
-        }),
+        body: formData,
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error || "Xử lý XML thất bại");
+        throw new Error(data?.error || "Kiểm tra XML thất bại");
+      }
+
+      setPreview(data);
+    } catch (error: any) {
+      setPreview({
+        error: error?.message || "Có lỗi xảy ra khi kiểm tra XML",
+      });
+    } finally {
+      setUploading(false);
+      setChecking(false);
+    }
+  }
+
+  async function handleImport() {
+    if (!file) {
+      alert("Vui lòng chọn file XML trước.");
+      return;
+    }
+
+    if (!preview?.ok) {
+      alert("Vui lòng kiểm tra file trước khi import.");
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      setResult(null);
+
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("note", note);
+      formData.append("originalName", file.name);
+
+      const res = await fetch("/api/import-xml/process", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Import XML thất bại");
       }
 
       setResult(data);
@@ -78,7 +162,6 @@ export default function ImportXmlPage() {
         error: error?.message || "Có lỗi xảy ra khi import XML",
       });
     } finally {
-      setUploading(false);
       setProcessing(false);
     }
   }
@@ -87,13 +170,14 @@ export default function ImportXmlPage() {
     setFile(null);
     setNote("");
     setProgress(0);
+    setPreview(null);
     setResult(null);
 
     const input = document.getElementById("xml-file-input") as HTMLInputElement | null;
     if (input) input.value = "";
   }
 
-  const busy = uploading || processing;
+  const busy = uploading || checking || processing;
 
   return (
     <DashboardShell>
@@ -106,7 +190,7 @@ export default function ImportXmlPage() {
         <div className="card-header">
           <h2 style={{ margin: 0, fontSize: 18 }}>Tải file XML</h2>
           <p className="page-subtitle">
-            File sẽ được upload trực tiếp lên Blob để tránh lỗi giới hạn dung lượng.
+            Kiểm tra file trước khi import chính thức để tránh lỗi dữ liệu.
           </p>
         </div>
 
@@ -137,17 +221,25 @@ export default function ImportXmlPage() {
             </div>
           </div>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
-              className="btn btn-primary"
-              onClick={handleImport}
+              className="btn btn-secondary"
+              onClick={handlePreview}
               disabled={busy || !file}
             >
               {uploading
                 ? `Đang upload ${progress}%...`
-                : processing
-                ? "Đang xử lý XML..."
-                : "Bắt đầu import"}
+                : checking
+                ? "Đang kiểm tra file..."
+                : "Kiểm tra file"}
+            </button>
+
+            <button
+              className="btn btn-primary"
+              onClick={handleImport}
+              disabled={busy || !file || !preview?.ok}
+            >
+              {processing ? "Đang import..." : "Import chính thức"}
             </button>
 
             <button
@@ -159,7 +251,7 @@ export default function ImportXmlPage() {
             </button>
           </div>
 
-          {(uploading || processing) && (
+          {(uploading || checking || processing) && (
             <div style={{ marginTop: 16 }}>
               <div
                 style={{
@@ -181,7 +273,9 @@ export default function ImportXmlPage() {
               <div style={{ marginTop: 8, fontSize: 14, color: "#64748b" }}>
                 {uploading
                   ? `Đang upload file lên Blob: ${progress}%`
-                  : "Upload xong, đang xử lý dữ liệu XML..."}
+                  : checking
+                  ? "Upload xong, đang kiểm tra cấu trúc XML..."
+                  : "Đang import dữ liệu vào database..."}
               </div>
             </div>
           )}
@@ -190,7 +284,115 @@ export default function ImportXmlPage() {
 
       <section className="section-spacing card">
         <div className="card-header">
-          <h2 style={{ margin: 0, fontSize: 18 }}>Kết quả xử lý</h2>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Preview trước khi import</h2>
+        </div>
+
+        <div className="card-body">
+          {!preview ? (
+            <div style={{ color: "#64748b" }}>Chưa có dữ liệu preview</div>
+          ) : preview.error ? (
+            <pre
+              style={{
+                margin: 0,
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: "#b91c1c",
+              }}
+            >
+              {JSON.stringify(preview, null, 2)}
+            </pre>
+          ) : (
+            <>
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                  gap: 12,
+                  marginBottom: 16,
+                }}
+              >
+                <div className="stat-card">
+                  <div className="stat-title">Mã khóa</div>
+                  <div className="stat-value">{preview.course?.maKhoaHoc || "-"}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Tên khóa</div>
+                  <div className="stat-value">{preview.course?.tenKhoaHoc || "-"}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Tổng học viên</div>
+                  <div className="stat-value">{preview.summary?.total || 0}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Sẽ tạo mới</div>
+                  <div className="stat-value">{preview.summary?.willCreate || 0}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Sẽ cập nhật</div>
+                  <div className="stat-value">{preview.summary?.willUpdate || 0}</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-title">Dòng lỗi</div>
+                  <div className="stat-value">{preview.summary?.invalid || 0}</div>
+                </div>
+              </div>
+
+              {preview.errors && preview.errors.length > 0 && (
+                <div
+                  style={{
+                    marginBottom: 16,
+                    padding: 12,
+                    borderRadius: 10,
+                    background: "#fff7ed",
+                    border: "1px solid #fdba74",
+                    color: "#9a3412",
+                    fontSize: 14,
+                  }}
+                >
+                  {preview.errors.map((err, index) => (
+                    <div key={index}>- {err}</div>
+                  ))}
+                </div>
+              )}
+
+              <div className="table-wrap">
+                <table className="table" style={{ minWidth: 900 }}>
+                  <thead>
+                    <tr>
+                      <th>MA_DK</th>
+                      <th>Họ và tên</th>
+                      <th>Ngày sinh</th>
+                      <th>CCCD / Số CMT</th>
+                      <th>Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(preview.previewRows || []).map((row, index) => (
+                      <tr key={`${row.maDk}-${index}`}>
+                        <td>{row.maDk}</td>
+                        <td>{row.hoVaTen}</td>
+                        <td>{row.ngaySinh}</td>
+                        <td>{row.soCmt}</td>
+                        <td>{statusLabel(row.status)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="section-spacing card">
+        <div className="card-header">
+          <h2 style={{ margin: 0, fontSize: 18 }}>Kết quả import chính thức</h2>
         </div>
 
         <div className="card-body">
