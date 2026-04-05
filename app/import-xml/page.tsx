@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { upload } from "@vercel/blob/client";
 import DashboardShell from "../../components/dashboard-shell";
 import Header from "../../components/header";
 
@@ -55,33 +54,11 @@ export default function ImportXmlPage() {
   const [file, setFile] = useState<File | null>(null);
   const [note, setNote] = useState("");
 
-  const [uploading, setUploading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [processing, setProcessing] = useState(false);
 
-  const [progress, setProgress] = useState(0);
   const [preview, setPreview] = useState<PreviewResult | null>(null);
   const [result, setResult] = useState<ProcessResult | null>(null);
-
-  async function uploadToBlob(currentFile: File) {
-    const safeName = currentFile.name.replace(/\s+/g, "-");
-    const pathname = `imports/xml/${Date.now()}-${safeName}`;
-
-    const blob = await upload(pathname, currentFile, {
-      access: "public",
-      handleUploadUrl: "/api/blob/upload-xml",
-      multipart: true,
-      clientPayload: JSON.stringify({
-        originalName: currentFile.name,
-        note,
-      }),
-      onUploadProgress: ({ percentage }) => {
-        setProgress(Math.round(percentage));
-      },
-    });
-
-    return blob;
-  }
 
   async function handlePreview() {
     if (!file) {
@@ -90,27 +67,17 @@ export default function ImportXmlPage() {
     }
 
     try {
-      setUploading(true);
-      setChecking(false);
+      setChecking(true);
       setProcessing(false);
-      setProgress(0);
       setPreview(null);
       setResult(null);
 
-      const blob = await uploadToBlob(file);
-
-      setUploading(false);
-      setChecking(true);
+      const formData = new FormData();
+      formData.append("file", file);
 
       const res = await fetch("/api/import-xml/preview", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: blob.url,
-          fileName: file.name,
-        }),
+        body: formData,
       });
 
       const text = await res.text();
@@ -132,7 +99,6 @@ export default function ImportXmlPage() {
         error: error?.message || "Có lỗi xảy ra khi kiểm tra XML",
       });
     } finally {
-      setUploading(false);
       setChecking(false);
     }
   }
@@ -152,18 +118,14 @@ export default function ImportXmlPage() {
       setProcessing(true);
       setResult(null);
 
-      const blob = await uploadToBlob(file);
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("note", note);
+      formData.append("originalName", file.name);
 
       const res = await fetch("/api/import-xml/process", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: blob.url,
-          note,
-          originalName: file.name,
-        }),
+        body: formData,
       });
 
       const text = await res.text();
@@ -192,7 +154,6 @@ export default function ImportXmlPage() {
   function handleClear() {
     setFile(null);
     setNote("");
-    setProgress(0);
     setPreview(null);
     setResult(null);
 
@@ -200,7 +161,7 @@ export default function ImportXmlPage() {
     if (input) input.value = "";
   }
 
-  const busy = uploading || checking || processing;
+  const busy = checking || processing;
 
   return (
     <DashboardShell>
@@ -247,11 +208,7 @@ export default function ImportXmlPage() {
               onClick={handlePreview}
               disabled={busy || !file}
             >
-              {uploading
-                ? `Đang upload ${progress}%...`
-                : checking
-                ? "Đang kiểm tra file..."
-                : "Kiểm tra file"}
+              {checking ? "Đang kiểm tra file..." : "Kiểm tra file"}
             </button>
 
             <button
@@ -271,32 +228,11 @@ export default function ImportXmlPage() {
             </button>
           </div>
 
-          {(uploading || checking || processing) && (
-            <div style={{ marginTop: 16 }}>
-              <div
-                style={{
-                  height: 10,
-                  background: "#e2e8f0",
-                  borderRadius: 999,
-                  overflow: "hidden",
-                }}
-              >
-                <div
-                  style={{
-                    width: `${uploading ? progress : 100}%`,
-                    height: "100%",
-                    background: "var(--primary)",
-                    transition: "width 0.2s ease",
-                  }}
-                />
-              </div>
-              <div style={{ marginTop: 8, fontSize: 14, color: "#64748b" }}>
-                {uploading
-                  ? `Đang upload file lên Blob: ${progress}%`
-                  : checking
-                  ? "Đang kiểm tra cấu trúc XML..."
-                  : "Đang import dữ liệu..."}
-              </div>
+          {(checking || processing) && (
+            <div style={{ marginTop: 16, fontSize: 14, color: "#64748b" }}>
+              {checking
+                ? "Đang kiểm tra cấu trúc XML..."
+                : "Đang import dữ liệu vào database..."}
             </div>
           )}
         </div>

@@ -27,29 +27,17 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const url = String(body?.url || "");
-    const fileName = String(body?.fileName || "");
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
 
-    if (!url) {
+    if (!file) {
       return NextResponse.json(
-        { error: "Thiếu URL Blob." },
+        { error: "Không có file XML." },
         { status: 400 }
       );
     }
 
-    const fileRes = await fetch(url, {
-      cache: "no-store",
-    });
-
-    if (!fileRes.ok) {
-      return NextResponse.json(
-        { error: "Không đọc được file XML từ Blob." },
-        { status: 400 }
-      );
-    }
-
-    const xmlText = await fileRes.text();
+    const xmlText = await file.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -108,7 +96,7 @@ export async function POST(req: Request) {
       existingStudents.map((student) => student.maDk).filter(Boolean)
     );
 
-    let missingMaDk = 0;
+    let invalid = 0;
     let willCreate = 0;
     let willUpdate = 0;
     const previewErrors: string[] = [];
@@ -123,7 +111,7 @@ export async function POST(req: Request) {
 
       if (!maDk) {
         status = "invalid";
-        missingMaDk++;
+        invalid++;
       } else if (existingSet.has(maDk)) {
         status = "update";
         willUpdate++;
@@ -144,10 +132,12 @@ export async function POST(req: Request) {
     if (nguoiLxList.length > 20) {
       for (const item of nguoiLxList.slice(20)) {
         const maDk = String(item?.MA_DK || "").trim();
+
         if (!maDk) {
-          missingMaDk++;
+          invalid++;
           continue;
         }
+
         if (existingSet.has(maDk)) {
           willUpdate++;
         } else {
@@ -156,13 +146,13 @@ export async function POST(req: Request) {
       }
     }
 
-    if (missingMaDk > 0) {
-      previewErrors.push(`Có ${missingMaDk} học viên thiếu MA_DK.`);
+    if (invalid > 0) {
+      previewErrors.push(`Có ${invalid} học viên thiếu MA_DK.`);
     }
 
     return NextResponse.json({
       ok: true,
-      fileName,
+      fileName: file.name,
       course: {
         maKhoaHoc,
         tenKhoaHoc,
@@ -174,14 +164,13 @@ export async function POST(req: Request) {
         total: nguoiLxList.length,
         willCreate,
         willUpdate,
-        invalid: missingMaDk,
+        invalid,
       },
       previewRows,
       errors: previewErrors,
     });
   } catch (error: any) {
     console.error("POST /api/import-xml/preview error:", error);
-
     return NextResponse.json(
       { error: error?.message || "Không preview được file XML." },
       { status: 500 }
