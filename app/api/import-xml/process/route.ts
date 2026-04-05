@@ -2,30 +2,88 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { XMLParser } from "fast-xml-parser";
 
-function parseDateVN(dateStr?: string) {
-  if (!dateStr) return null;
+function parseDate(value?: string | null): Date | null {
+  if (!value) return null;
 
-  if (dateStr.length === 8) {
-    return new Date(
-      `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`
-    );
+  const v = String(value).trim();
+  if (!v) return null;
+
+  if (/^\d{8}$/.test(v)) {
+    const yyyy = v.slice(0, 4);
+    const mm = v.slice(4, 6);
+    const dd = v.slice(6, 8);
+    const d = new Date(`${yyyy}-${mm}-${dd}`);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  return new Date(dateStr);
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function toArray<T>(value: T | T[] | undefined | null): T[] {
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
 }
 
 export async function POST(req: Request) {
   try {
-    const text = await req.text();
+    const body = await req.json();
+    const pathname = String(body?.pathname || "");
+    const note = String(body?.note || "");
+    const originalName = String(body?.originalName || "");
+
+    if (!pathname) {
+      return NextResponse.json(
+        { error: "Thiếu pathname file Blob." },
+        { status: 400 }
+      );
+    }
+
+    const blobUrl = process.env.BLOB_READ_WRITE_TOKEN
+      ? `https://blob.vercel-storage.com/${pathname}`
+      : null;
+
+    if (!blobUrl) {
+      return NextResponse.json(
+        { error: "Thiếu cấu hình BLOB_READ_WRITE_TOKEN." },
+        { status: 500 }
+      );
+    }
+
+    const fileRes = await fetch(blobUrl, {
+      headers: {
+        Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
+      },
+      cache: "no-store",
+    });
+
+    if (!fileRes.ok) {
+      return NextResponse.json(
+        { error: "Không đọc được file XML từ Blob." },
+        { status: 400 }
+      );
+    }
+
+    const xmlText = await fileRes.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
+      parseTagValue: false,
+      trimValues: true,
     });
 
-    const json = parser.parse(text);
+    const parsed = parser.parse(xmlText);
 
-    const khoaHoc = json?.BAO_CAO1?.DATA?.KHOA_HOC;
-    const nguoiLX = json?.BAO_CAO1?.DATA?.NGUOI_LX;
+    const root = parsed?.BAO_CAO1;
+    if (!root) {
+      return NextResponse.json(
+        { error: "Không tìm thấy BAO_CAO1 trong XML." },
+        { status: 400 }
+      );
+    }
+
+    const khoaHoc = root?.DATA?.KHOA_HOC;
+    const nguoiLxList = toArray(root?.DATA?.NGUOI_LXS?.NGUOI_LX);
 
     if (!khoaHoc) {
       return NextResponse.json(
@@ -34,78 +92,116 @@ export async function POST(req: Request) {
       );
     }
 
-    const list = Array.isArray(nguoiLX) ? nguoiLX : [nguoiLX];
+    const maKhoaHoc = String(khoaHoc.MA_KHOA_HOC || "").trim();
+    if (!maKhoaHoc) {
+      return NextResponse.json(
+        { error: "Thiếu MA_KHOA_HOC trong XML." },
+        { status: 400 }
+      );
+    }
 
-    // ✅ upsert course
     const course = await prisma.course.upsert({
-      where: { maKhoaHoc: khoaHoc.MA_KHOA_HOC },
+      where: { maKhoaHoc },
       update: {
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC,
-        hangDaoTao: khoaHoc.HANG_DAO_TAO,
+        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
+        maBci: khoaHoc.MA_BCI || null,
+        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
+        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
+        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
+        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
+        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
       },
       create: {
-        maKhoaHoc: khoaHoc.MA_KHOA_HOC,
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC,
-        hangDaoTao: khoaHoc.HANG_DAO_TAO,
-        ngayKhaiGiang: parseDateVN(khoaHoc.NGAY_KHAI_GIANG),
-        ngayBeGiang: parseDateVN(khoaHoc.NGAY_BE_GIANG),
+        maKhoaHoc,
+        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
+        maBci: khoaHoc.MA_BCI || null,
+        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
+        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
+        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
+        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
+        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
       },
     });
 
     let created = 0;
     let updated = 0;
+    const errors: string[] = [];
 
-    for (const item of list) {
-      if (!item?.MA_DK) continue;
+    for (const item of nguoiLxList) {
+      try {
+        const hoSo = item?.HO_SO || {};
+        const maDk = item?.MA_DK ? String(item.MA_DK).trim() : "";
 
-      const data = {
-        courseId: course.id,
+        if (!maDk) {
+          errors.push(`Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`);
+          continue;
+        }
 
-        maDk: item.MA_DK,
-        hoVaTen: item.HO_VA_TEN,
-        ngaySinh: parseDateVN(item.NGAY_SINH),
-        soCmt: item.SO_CMT,
-        gioiTinh: item.GIOI_TINH,
+        const data = {
+          courseId: course.id,
+          maDk,
+          hoVaTen: item?.HO_VA_TEN || "",
+          soCmt: item?.SO_CMT ? String(item.SO_CMT).trim() : null,
+          ngaySinh: parseDate(item?.NGAY_SINH),
+          gioiTinh: item?.GIOI_TINH || null,
+          soHoSo: hoSo?.SO_HO_SO ? String(hoSo.SO_HO_SO).trim() : null,
+          ngayNhanHoSo: parseDate(hoSo?.NGAY_NHAN_HOSO),
+          hangGplx: hoSo?.HANG_GPLX || khoaHoc?.HANG_GPLX || null,
+          hangDaoTao: hoSo?.HANG_DAOTAO || khoaHoc?.MA_HANG_DAO_TAO || null,
+        };
 
-        soHoSo: item?.HO_SO?.SO_HO_SO,
-        ngayNhanHoSo: parseDateVN(item?.HO_SO?.NGAY_NHAN_HO_SO),
-
-        hangGplx: khoaHoc.HANG_GPLX,
-        hangDaoTao: khoaHoc.HANG_DAO_TAO,
-      };
-
-      const existed = await prisma.student.findUnique({
-        where: { maDk: item.MA_DK },
-      });
-
-      if (existed) {
-        // ✅ UPDATE nếu trùng MA_DK
-        await prisma.student.update({
-          where: { maDk: item.MA_DK },
-          data,
+        const existed = await prisma.student.findUnique({
+          where: { maDk },
         });
-        updated++;
-      } else {
-        // ✅ CREATE nếu chưa có
-        await prisma.student.create({
-          data,
-        });
-        created++;
+
+        if (existed) {
+          await prisma.student.update({
+            where: { maDk },
+            data,
+          });
+          updated++;
+        } else {
+          await prisma.student.create({
+            data,
+          });
+          created++;
+        }
+      } catch (e: any) {
+        errors.push(`Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${e.message}`);
       }
     }
 
+    await prisma.importLog.create({
+      data: {
+        loaiFile: "XML",
+        tenFile: originalName || "import-xml",
+        tongSoDong: nguoiLxList.length,
+        thanhCong: created + updated,
+        thatBai: errors.length,
+        ghiChu: errors.length
+          ? errors.join(" | ").slice(0, 1000)
+          : note || "OK",
+      },
+    });
+
     return NextResponse.json({
       ok: true,
-      message: "Import thành công",
-      total: list.length,
+      message: "Import XML hoàn tất",
+      fileName: originalName,
+      course: {
+        maKhoaHoc: course.maKhoaHoc,
+        tenKhoaHoc: course.tenKhoaHoc,
+      },
+      total: nguoiLxList.length,
       created,
       updated,
+      failed: errors.length,
+      errors,
     });
   } catch (error: any) {
-    console.error(error);
-
+    console.error("POST /api/import-xml/process error:", error);
     return NextResponse.json(
-      { error: error.message || "Import lỗi" },
+      { error: error?.message || "Lỗi import XML" },
       { status: 500 }
     );
   }
