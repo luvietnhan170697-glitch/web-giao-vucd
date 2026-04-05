@@ -267,75 +267,76 @@ export default function ImportXmlPage() {
   }
 
   async function handleImport() {
-    if (!file) {
-      alert("Vui lòng chọn file XML trước.");
-      return;
-    }
+  if (!file) {
+    alert("Vui lòng chọn file XML trước.");
+    return;
+  }
 
-    if (!preview?.ok) {
-      alert("Vui lòng kiểm tra file trước khi import.");
-      return;
-    }
+  if (!preview?.ok) {
+    alert("Vui lòng kiểm tra file trước khi import.");
+    return;
+  }
+
+  try {
+    setProcessing(true);
+    setUploading(true);
+    setProgress(0);
+    setResult(null);
+
+    const safeName = file.name.replace(/\s+/g, "-");
+    const pathname = `imports/xml/${Date.now()}-${safeName}`;
+
+    const blob = await upload(pathname, file, {
+      access: "private",
+      handleUploadUrl: "/api/blob/upload-xml",
+      multipart: true,
+      clientPayload: JSON.stringify({
+        originalName: file.name,
+        note,
+      }),
+      onUploadProgress: ({ percentage }) => {
+        setProgress(Math.round(percentage));
+      },
+    });
+
+    setUploading(false);
+
+    const res = await fetch("/api/import-xml/process", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        url: blob.url,
+        pathname: blob.pathname,
+        note,
+        originalName: file.name,
+      }),
+    });
+
+    const text = await res.text();
+    let data: ProcessResult;
 
     try {
-      setProcessing(true);
-      setUploading(true);
-      setProgress(0);
-      setResult(null);
-
-      const safeName = file.name.replace(/\s+/g, "-");
-      const pathname = `imports/xml/${Date.now()}-${safeName}`;
-
-      const blob = await upload(pathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/blob/upload-xml",
-        multipart: true,
-        clientPayload: JSON.stringify({
-          originalName: file.name,
-          note,
-        }),
-        onUploadProgress: ({ percentage }) => {
-          setProgress(Math.round(percentage));
-        },
-      });
-
-      setUploading(false);
-
-      const res = await fetch("/api/import-xml/process", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: blob.url,
-          note,
-          originalName: file.name,
-        }),
-      });
-
-      const text = await res.text();
-      let data: ProcessResult;
-
-      try {
-        data = JSON.parse(text);
-      } catch {
-        throw new Error(text || "Import XML thất bại");
-      }
-
-      if (!res.ok) {
-        throw new Error(data?.error || "Import XML thất bại");
-      }
-
-      setResult(data);
-    } catch (error: any) {
-      setResult({
-        error: error?.message || "Có lỗi xảy ra khi import XML",
-      });
-    } finally {
-      setUploading(false);
-      setProcessing(false);
+      data = JSON.parse(text);
+    } catch {
+      throw new Error(text || "Import XML thất bại");
     }
+
+    if (!res.ok) {
+      throw new Error(data?.error || "Import XML thất bại");
+    }
+
+    setResult(data);
+  } catch (error: any) {
+    setResult({
+      error: error?.message || "Có lỗi xảy ra khi import XML",
+    });
+  } finally {
+    setUploading(false);
+    setProcessing(false);
   }
+}
 
   function handleClear() {
     setFile(null);

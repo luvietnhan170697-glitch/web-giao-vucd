@@ -29,6 +29,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const url = String(body?.url || "");
+    const pathname = String(body?.pathname || "");
     const note = String(body?.note || "");
     const originalName = String(body?.originalName || "");
 
@@ -39,14 +40,28 @@ export async function POST(req: Request) {
       );
     }
 
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return NextResponse.json(
+        { error: "Thiếu BLOB_READ_WRITE_TOKEN trên server." },
+        { status: 500 }
+      );
+    }
+
     const fileRes = await fetch(url, {
       cache: "no-store",
-next: { revalidate: 0 },
+      headers: {
+        Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
+      },
     });
 
     if (!fileRes.ok) {
+      const errorText = await fileRes.text().catch(() => "");
       return NextResponse.json(
-        { error: "Không đọc được file XML từ Blob." },
+        {
+          error: `Không đọc được file XML từ Blob. status=${fileRes.status}${
+            errorText ? ` - ${errorText}` : ""
+          }`,
+        },
         { status: 400 }
       );
     }
@@ -139,66 +154,74 @@ next: { revalidate: 0 },
 
     const batchSize = 200;
 
-for (let i = 0; i < nguoiLxList.length; i += batchSize) {
-  const batch = nguoiLxList.slice(i, i + batchSize);
+    for (let i = 0; i < nguoiLxList.length; i += batchSize) {
+      const batch = nguoiLxList.slice(i, i + batchSize);
 
-  const createData: any[] = [];
-  const updateData: any[] = [];
+      const createData: Array<Record<string, unknown>> = [];
+      const updateData: Array<{ maDk: string; data: Record<string, unknown> }> = [];
 
-  for (const item of batch) {
-    try {
-      const hoSo = item?.HO_SO || {};
-      const maDk = String(item?.MA_DK || "").trim();
+      for (const item of batch) {
+        try {
+          const hoSo = item?.HO_SO || {};
+          const maDk = String(item?.MA_DK || "").trim();
 
-      if (!maDk) continue;
+          if (!maDk) {
+            failed++;
+            errors.push(
+              `Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`
+            );
+            continue;
+          }
 
-      const data = {
-        courseId: course.id,
-        maDk,
-        hoVaTen: item?.HO_VA_TEN || "",
-        soCmt: item?.SO_CMT ? String(item.SO_CMT).trim() : null,
-        ngaySinh: parseDate(item?.NGAY_SINH),
-        gioiTinh: item?.GIOI_TINH || null,
-        soHoSo: hoSo?.SO_HO_SO ? String(hoSo.SO_HO_SO).trim() : null,
-        ngayNhanHoSo: parseDate(hoSo?.NGAY_NHAN_HOSO),
-        hangGplx: hoSo?.HANG_GPLX || khoaHoc?.HANG_GPLX || null,
-        hangDaoTao:
-          hoSo?.HANG_DAOTAO || khoaHoc?.MA_HANG_DAO_TAO || null,
-      };
+          const data = {
+            courseId: course.id,
+            maDk,
+            hoVaTen: item?.HO_VA_TEN || "",
+            soCmt: item?.SO_CMT ? String(item.SO_CMT).trim() : null,
+            ngaySinh: parseDate(item?.NGAY_SINH),
+            gioiTinh: item?.GIOI_TINH || null,
+            soHoSo: hoSo?.SO_HO_SO ? String(hoSo.SO_HO_SO).trim() : null,
+            ngayNhanHoSo: parseDate(hoSo?.NGAY_NHAN_HOSO),
+            hangGplx: hoSo?.HANG_GPLX || khoaHoc?.HANG_GPLX || null,
+            hangDaoTao: hoSo?.HANG_DAOTAO || khoaHoc?.MA_HANG_DAO_TAO || null,
+          };
 
-      if (existingSet.has(maDk)) {
-        updateData.push({ maDk, data });
-      } else {
-        createData.push(data);
+          if (existingSet.has(maDk)) {
+            updateData.push({ maDk, data });
+          } else {
+            createData.push(data);
+          }
+        } catch (e: unknown) {
+          failed++;
+          errors.push(
+            `Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${
+              e instanceof Error ? e.message : "Unknown error"
+            }`
+          );
+        }
       }
-    } catch {
-      failed++;
+
+      if (createData.length > 0) {
+        await prisma.student.createMany({
+          data: createData as any,
+          skipDuplicates: true,
+        });
+        created += createData.length;
+      }
+
+      for (const item of updateData) {
+        await prisma.student.update({
+          where: { maDk: item.maDk },
+          data: item.data as any,
+        });
+        updated++;
+      }
     }
-  }
-
-  // 🚀 CREATE MANY (NHANH GẤP 10-50 lần)
-  if (createData.length) {
-    await prisma.student.createMany({
-      data: createData,
-      skipDuplicates: true,
-    });
-    created += createData.length;
-  }
-
-  // UPDATE vẫn phải loop (prisma limitation)
-  for (const item of updateData) {
-    await prisma.student.update({
-      where: { maDk: item.maDk },
-      data: item.data,
-    });
-    updated++;
-  }
-}
 
     await prisma.importLog.create({
       data: {
         loaiFile: "XML",
-        tenFile: originalName || "import-xml",
+        tenFile: originalName || pathname || "import-xml",
         tongSoDong: nguoiLxList.length,
         thanhCong: created + updated,
         thatBai: failed,
@@ -211,7 +234,7 @@ for (let i = 0; i < nguoiLxList.length; i += batchSize) {
     return NextResponse.json({
       ok: true,
       message: "Import XML hoàn tất",
-      fileName: originalName,
+      fileName: originalName || pathname,
       course: {
         maKhoaHoc: course.maKhoaHoc,
         tenKhoaHoc: course.tenKhoaHoc,
@@ -222,10 +245,14 @@ for (let i = 0; i < nguoiLxList.length; i += batchSize) {
       failed,
       errors,
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("POST /api/import-xml/process error:", error);
+
     return NextResponse.json(
-      { error: error?.message || "Lỗi import XML" },
+      {
+        error:
+          error instanceof Error ? error.message : "Lỗi import XML",
+      },
       { status: 500 }
     );
   }
