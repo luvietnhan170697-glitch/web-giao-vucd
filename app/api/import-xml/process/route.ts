@@ -73,12 +73,13 @@ export async function POST(req: Request) {
 
     if (!khoaHoc) {
       return NextResponse.json(
-        { error: "Không tìm thấy KHOA_HOC" },
+        { error: "Không tìm thấy KHOA_HOC trong XML." },
         { status: 400 }
       );
     }
 
-    const maKhoaHoc = String(khoaHoc.MA_KHOA_HOC || "").trim();
+    const maKhoaHoc = String(khoaHoc?.MA_KHOA_HOC || "").trim();
+
     if (!maKhoaHoc) {
       return NextResponse.json(
         { error: "Thiếu MA_KHOA_HOC trong XML." },
@@ -89,30 +90,25 @@ export async function POST(req: Request) {
     const course = await prisma.course.upsert({
       where: { maKhoaHoc },
       update: {
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
-        maBci: khoaHoc.MA_BCI || null,
-        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
-        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
-        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
-        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
-        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
+        tenKhoaHoc: khoaHoc?.TEN_KHOA_HOC || null,
+        maBci: khoaHoc?.MA_BCI || null,
+        hangDaoTao: khoaHoc?.MA_HANG_DAO_TAO || khoaHoc?.HANG_GPLX || null,
+        ngayKhaiGiang: parseDate(khoaHoc?.NGAY_KHAI_GIANG),
+        ngayBeGiang: parseDate(khoaHoc?.NGAY_BE_GIANG),
+        ngaySatHach: parseDate(khoaHoc?.NGAY_SAT_HACH),
+        soHocSinh: khoaHoc?.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
       },
       create: {
         maKhoaHoc,
-        tenKhoaHoc: khoaHoc.TEN_KHOA_HOC || null,
-        maBci: khoaHoc.MA_BCI || null,
-        hangDaoTao: khoaHoc.MA_HANG_DAO_TAO || khoaHoc.HANG_GPLX || null,
-        ngayKhaiGiang: parseDate(khoaHoc.NGAY_KHAI_GIANG),
-        ngayBeGiang: parseDate(khoaHoc.NGAY_BE_GIANG),
-        ngaySatHach: parseDate(khoaHoc.NGAY_SAT_HACH),
-        soHocSinh: khoaHoc.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
+        tenKhoaHoc: khoaHoc?.TEN_KHOA_HOC || null,
+        maBci: khoaHoc?.MA_BCI || null,
+        hangDaoTao: khoaHoc?.MA_HANG_DAO_TAO || khoaHoc?.HANG_GPLX || null,
+        ngayKhaiGiang: parseDate(khoaHoc?.NGAY_KHAI_GIANG),
+        ngayBeGiang: parseDate(khoaHoc?.NGAY_BE_GIANG),
+        ngaySatHach: parseDate(khoaHoc?.NGAY_SAT_HACH),
+        soHocSinh: khoaHoc?.SO_HOC_SINH ? Number(khoaHoc.SO_HOC_SINH) : null,
       },
     });
-
-    let created = 0;
-    let updated = 0;
-    let failed = 0;
-    const errors: string[] = [];
 
     const maDkList = nguoiLxList
       .map((item) => String(item?.MA_DK || "").trim())
@@ -135,6 +131,11 @@ export async function POST(req: Request) {
       existingStudents.map((student) => student.maDk).filter(Boolean)
     );
 
+    let created = 0;
+    let updated = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
     const batchSize = 100;
 
     for (let i = 0; i < nguoiLxList.length; i += batchSize) {
@@ -143,11 +144,13 @@ export async function POST(req: Request) {
       for (const item of batch) {
         try {
           const hoSo = item?.HO_SO || {};
-          const maDk = item?.MA_DK ? String(item.MA_DK).trim() : "";
+          const maDk = String(item?.MA_DK || "").trim();
 
           if (!maDk) {
             failed++;
-            errors.push(`Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`);
+            errors.push(
+              `Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`
+            );
             continue;
           }
 
@@ -178,7 +181,9 @@ export async function POST(req: Request) {
           }
         } catch (e: any) {
           failed++;
-          errors.push(`Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${e.message}`);
+          errors.push(
+            `Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${e.message}`
+          );
         }
       }
     }
