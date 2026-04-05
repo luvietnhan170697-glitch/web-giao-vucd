@@ -27,19 +27,30 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const note = String(formData.get("note") || "");
-    const originalName = String(formData.get("originalName") || "");
+    const body = await req.json();
+    const url = String(body?.url || "");
+    const note = String(body?.note || "");
+    const originalName = String(body?.originalName || "");
 
-    if (!file) {
+    if (!url) {
       return NextResponse.json(
-        { error: "Không có file XML." },
+        { error: "Thiếu URL Blob." },
         { status: 400 }
       );
     }
 
-    const xmlText = await file.text();
+    const fileRes = await fetch(url, {
+      cache: "no-store",
+    });
+
+    if (!fileRes.ok) {
+      return NextResponse.json(
+        { error: "Không đọc được file XML từ Blob." },
+        { status: 400 }
+      );
+    }
+
+    const xmlText = await fileRes.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -136,9 +147,7 @@ export async function POST(req: Request) {
 
           if (!maDk) {
             failed++;
-            errors.push(
-              `Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`
-            );
+            errors.push(`Thiếu MA_DK ở học viên ${item?.HO_VA_TEN || "không rõ tên"}`);
             continue;
           }
 
@@ -169,9 +178,7 @@ export async function POST(req: Request) {
           }
         } catch (e: any) {
           failed++;
-          errors.push(
-            `Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${e.message}`
-          );
+          errors.push(`Lỗi học viên ${item?.HO_VA_TEN || "không rõ"}: ${e.message}`);
         }
       }
     }
@@ -179,7 +186,7 @@ export async function POST(req: Request) {
     await prisma.importLog.create({
       data: {
         loaiFile: "XML",
-        tenFile: originalName || file.name || "import-xml",
+        tenFile: originalName || "import-xml",
         tongSoDong: nguoiLxList.length,
         thanhCong: created + updated,
         thatBai: failed,
@@ -192,7 +199,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: true,
       message: "Import XML hoàn tất",
-      fileName: originalName || file.name,
+      fileName: originalName,
       course: {
         maKhoaHoc: course.maKhoaHoc,
         tenKhoaHoc: course.tenKhoaHoc,

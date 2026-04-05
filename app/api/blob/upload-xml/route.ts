@@ -11,13 +11,16 @@ export async function POST(request: Request): Promise<NextResponse> {
       onBeforeGenerateToken: async (pathname) => {
         return {
           allowedContentTypes: ["text/xml", "application/xml"],
-          maximumSizeInBytes: 1024 * 1024 * 1024, // 1GB
+          maximumSizeInBytes: 1024 * 1024 * 1024,
           addRandomSuffix: false,
           pathname,
+          tokenPayload: JSON.stringify({
+            uploadedAt: Date.now(),
+          }),
         };
       },
       onUploadCompleted: async () => {
-        // Có thể ghi log DB ở đây nếu muốn
+        // Có thể ghi log nếu cần
       },
     });
 

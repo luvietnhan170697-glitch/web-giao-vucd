@@ -27,17 +27,29 @@ function toArray<T>(value: T | T[] | undefined | null): T[] {
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const body = await req.json();
+    const url = String(body?.url || "");
+    const fileName = String(body?.fileName || "");
 
-    if (!file) {
+    if (!url) {
       return NextResponse.json(
-        { error: "Không có file XML." },
+        { error: "Thiếu URL Blob." },
         { status: 400 }
       );
     }
 
-    const xmlText = await file.text();
+    const fileRes = await fetch(url, {
+      cache: "no-store",
+    });
+
+    if (!fileRes.ok) {
+      return NextResponse.json(
+        { error: "Không đọc được file XML từ Blob." },
+        { status: 400 }
+      );
+    }
+
+    const xmlText = await fileRes.text();
 
     const parser = new XMLParser({
       ignoreAttributes: false,
@@ -124,9 +136,7 @@ export async function POST(req: Request) {
         maDk: maDk || "-",
         hoVaTen: hoVaTen || "-",
         soCmt: soCmt || "-",
-        ngaySinh: ngaySinh
-          ? ngaySinh.toISOString().slice(0, 10)
-          : "-",
+        ngaySinh: ngaySinh ? ngaySinh.toISOString().slice(0, 10) : "-",
         status,
       };
     });
@@ -152,7 +162,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      fileName: file.name,
+      fileName,
       course: {
         maKhoaHoc,
         tenKhoaHoc,

@@ -67,8 +67,8 @@ export default function ImportXmlPage() {
     const safeName = currentFile.name.replace(/\s+/g, "-");
     const pathname = `imports/xml/${Date.now()}-${safeName}`;
 
-    await upload(pathname, currentFile, {
-      access: "private",
+    const blob = await upload(pathname, currentFile, {
+      access: "public",
       handleUploadUrl: "/api/blob/upload-xml",
       multipart: true,
       clientPayload: JSON.stringify({
@@ -79,6 +79,8 @@ export default function ImportXmlPage() {
         setProgress(Math.round(percentage));
       },
     });
+
+    return blob;
   }
 
   async function handlePreview() {
@@ -95,20 +97,30 @@ export default function ImportXmlPage() {
       setPreview(null);
       setResult(null);
 
-      await uploadToBlob(file);
+      const blob = await uploadToBlob(file);
 
       setUploading(false);
       setChecking(true);
 
-      const formData = new FormData();
-      formData.append("file", file);
-
       const res = await fetch("/api/import-xml/preview", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: blob.url,
+          fileName: file.name,
+        }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: PreviewResult;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Kiểm tra XML thất bại");
+      }
 
       if (!res.ok) {
         throw new Error(data?.error || "Kiểm tra XML thất bại");
@@ -140,17 +152,28 @@ export default function ImportXmlPage() {
       setProcessing(true);
       setResult(null);
 
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("note", note);
-      formData.append("originalName", file.name);
+      const blob = await uploadToBlob(file);
 
       const res = await fetch("/api/import-xml/process", {
         method: "POST",
-        body: formData,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: blob.url,
+          note,
+          originalName: file.name,
+        }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+      let data: ProcessResult;
+
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(text || "Import XML thất bại");
+      }
 
       if (!res.ok) {
         throw new Error(data?.error || "Import XML thất bại");
@@ -183,15 +206,12 @@ export default function ImportXmlPage() {
     <DashboardShell>
       <Header
         title="Import XML"
-        subtitle="Upload file XML lớn qua Blob rồi xử lý trên server."
+        subtitle="Kiểm tra file trước khi import chính thức để tránh lỗi dữ liệu."
       />
 
       <section className="card">
         <div className="card-header">
           <h2 style={{ margin: 0, fontSize: 18 }}>Tải file XML</h2>
-          <p className="page-subtitle">
-            Kiểm tra file trước khi import chính thức để tránh lỗi dữ liệu.
-          </p>
         </div>
 
         <div className="card-body">
@@ -201,7 +221,7 @@ export default function ImportXmlPage() {
               <input
                 id="xml-file-input"
                 type="file"
-                accept=".xml,text/xml"
+                accept=".xml,text/xml,application/xml"
                 className="input"
                 onChange={(e) => setFile(e.target.files?.[0] || null)}
               />
@@ -274,8 +294,8 @@ export default function ImportXmlPage() {
                 {uploading
                   ? `Đang upload file lên Blob: ${progress}%`
                   : checking
-                  ? "Upload xong, đang kiểm tra cấu trúc XML..."
-                  : "Đang import dữ liệu vào database..."}
+                  ? "Đang kiểm tra cấu trúc XML..."
+                  : "Đang import dữ liệu..."}
               </div>
             </div>
           )}
