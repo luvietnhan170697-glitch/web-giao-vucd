@@ -3,15 +3,10 @@ import { jwtVerify } from "jose";
 import { COOKIE_NAME } from "./lib/auth";
 import { hasApiAccess, hasPageAccess } from "./lib/permissions";
 
-const { pathname } = req.nextUrl;
-
-// 🚀 BẮT BUỘC phải có đoạn này
-if (pathname.startsWith("/api/blob/upload-xml")) {
-  return NextResponse.next();
-}
-
 const publicPaths = ["/login", "/unauthorized"];
-const publicApiPaths = ["/api/auth/login"];
+const publicApiPaths = [
+  "/api/auth/login",
+];
 
 function getJwtSecret() {
   const secret = process.env.JWT_SECRET;
@@ -24,6 +19,12 @@ function getJwtSecret() {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
+  // 🚀 QUAN TRỌNG: bypass blob upload
+  if (pathname.startsWith("/api/blob/upload-xml")) {
+    return NextResponse.next();
+  }
+
+  // Static files
   if (
     pathname.startsWith("/_next") ||
     pathname.startsWith("/favicon.ico") ||
@@ -32,6 +33,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // Public routes
   if (publicPaths.includes(pathname) || publicApiPaths.includes(pathname)) {
     return NextResponse.next();
   }
@@ -52,14 +54,21 @@ export async function middleware(req: NextRequest) {
 
     if (!role) {
       if (pathname.startsWith("/api/")) {
-        return NextResponse.json({ error: "Token không hợp lệ" }, { status: 401 });
+        return NextResponse.json(
+          { error: "Token không hợp lệ" },
+          { status: 401 }
+        );
       }
+
       return NextResponse.redirect(new URL("/login", req.url));
     }
 
     if (pathname.startsWith("/api/")) {
       if (!hasApiAccess(role, pathname)) {
-        return NextResponse.json({ error: "Không có quyền truy cập" }, { status: 403 });
+        return NextResponse.json(
+          { error: "Không có quyền truy cập" },
+          { status: 403 }
+        );
       }
       return NextResponse.next();
     }
@@ -71,7 +80,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   } catch {
     if (pathname.startsWith("/api/")) {
-      return NextResponse.json({ error: "Phiên đăng nhập không hợp lệ" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Phiên đăng nhập không hợp lệ" },
+        { status: 401 }
+      );
     }
 
     return NextResponse.redirect(new URL("/login", req.url));
