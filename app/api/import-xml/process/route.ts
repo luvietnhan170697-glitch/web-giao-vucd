@@ -48,11 +48,11 @@ export async function POST(req: Request) {
     }
 
     const fileRes = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
-      },
-    });
+  cache: "no-store",
+  headers: {
+    Authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
+  },
+});
 
     if (!fileRes.ok) {
       const errorText = await fileRes.text().catch(() => "");
