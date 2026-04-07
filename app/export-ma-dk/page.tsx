@@ -1,6 +1,8 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import DashboardShell from "@/components/dashboard-shell";
+import Header from "@/components/header";
 
 type ExportMode = "ma_dk" | "mapping" | "file";
 type ExportTarget = "students" | "graduation" | "sat_hach";
@@ -104,20 +106,18 @@ export default function ExportMaDkPage() {
   }
 
   return (
-    <main className="space-y-6">
-      <section>
-        <h1 className="text-3xl font-bold text-slate-900">Export MA_DK</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Xuất dữ liệu theo danh sách MA_DK, mapping hoặc file tải lên.
-        </p>
-      </section>
+    <DashboardShell>
+      <Header
+        title="Export MA_DK"
+        subtitle="Xuất dữ liệu theo danh sách MA_DK, mapping hoặc file tải lên."
+      />
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="mb-6 text-2xl font-semibold text-slate-900">
+      <section className="card">
+        <h2 className="mb-5 text-xl font-semibold text-slate-900">
           Tải file xuất dữ liệu
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-800">
@@ -126,7 +126,7 @@ export default function ExportMaDkPage() {
               <select
                 value={target}
                 onChange={(e) => setTarget(e.target.value as ExportTarget)}
-                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none focus:border-teal-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-teal-600"
               >
                 <option value="students">Thông tin học viên</option>
                 <option value="graduation">Kết quả tốt nghiệp</option>
@@ -141,7 +141,7 @@ export default function ExportMaDkPage() {
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as ExportMode)}
-                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none focus:border-teal-600"
+                className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:border-teal-600"
               >
                 <option value="file">Xuất theo file tải lên</option>
                 <option value="ma_dk">Xuất theo MA_DK</option>
@@ -163,7 +163,7 @@ export default function ExportMaDkPage() {
                 type="file"
                 accept={ACCEPTED_FILE_TYPES}
                 onChange={handleFileChange}
-                className="block h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                className="block w-full rounded-xl border border-slate-300 px-3 py-3 text-sm"
               />
               <p className="mt-2 text-sm text-slate-500">
                 {file ? `Đã chọn: ${file.name}` : "Chưa chọn file"}
@@ -222,7 +222,7 @@ export default function ExportMaDkPage() {
         </form>
       </section>
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="card">
         <h2 className="mb-4 text-xl font-semibold text-slate-900">
           Hướng dẫn nhập liệu
         </h2>
@@ -245,6 +245,6 @@ export default function ExportMaDkPage() {
           </p>
         </div>
       </section>
-    </main>
+    </DashboardShell>
   );
 }
