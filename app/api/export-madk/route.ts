@@ -1,138 +1,492 @@
-import { NextRequest } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 
-const prisma = new PrismaClient();
+type ExportMode = "ma_dk" | "mapping" | "file";
+type ExportTarget = "students" | "graduation" | "sat_hach";
 
-function formatDate(value: Date | null | undefined) {
+type ParsedMapping = {
+  soCccd: string;
+  khoaHoc: string;
+};
+
+function normalize(value: unknown): string {
+  return value == null ? "" : String(value).trim();
+}
+
+function parseDate(value: Date | string | null | undefined): string {
   if (!value) return "";
   const d = new Date(value);
-  const dd = String(d.getDate()).padStart(2, "0");
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const yyyy = d.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("vi-VN");
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((v) => normalize(v)).filter(Boolean))];
+}
+
+function parseMaDkText(input: string): string[] {
+  return uniqueStrings(
+    input
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+  );
+}
+
+function parseMappingText(input: string): ParsedMapping[] {
+  const lines = input
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const mappings: ParsedMapping[] = [];
+
+  for (const line of lines) {
+    const parts = line.split("|").map((part) => part.trim());
+    if (parts.length < 2) continue;
+
+    const soCccd = normalize(parts[0]);
+    const khoaHoc = normalize(parts[1]);
+
+    if (!soCccd || !khoaHoc) continue;
+
+    mappings.push({ soCccd, khoaHoc });
+  }
+
+  return mappings;
+}
+
+function readCsvText(buffer: Buffer): string {
+  return buffer.toString("utf-8");
+}
+
+function parseCsvRows(text: string): Record<string, unknown>[] {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) return [];
+
+  const headers = lines[0].split(",").map((h) => h.trim());
+
+  return lines.slice(1).map((line) => {
+    const values = line.split(",").map((v) => v.trim());
+    const row: Record<string, unknown> = {};
+
+    headers.forEach((header, index) => {
+      row[header] = values[index] ?? "";
+    });
+
+    return row;
+  });
+}
+
+function getCell(row: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = row[key];
+    const normalized = normalize(value);
+    if (normalized) return normalized;
+  }
+  return "";
+}
+
+async function parseRowsFromFile(file: File): Promise<Record<string, unknown>[]> {
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const lowerName = file.name.toLowerCase();
+
+  if (lowerName.endsWith(".csv")) {
+    const csvText = readCsvText(buffer);
+    return parseCsvRows(csvText);
+  }
+
+  const workbook = XLSX.read(buffer, { type: "buffer" });
+  const firstSheetName = workbook.SheetNames[0];
+
+  if (!firstSheetName) return [];
+
+  const sheet = workbook.Sheets[firstSheetName];
+  return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+}
+
+async function readInput(
+  req: NextRequest
+): Promise<{
+  mode: ExportMode;
+  target: ExportTarget;
+  maDkList: string[];
+  mappingList: ParsedMapping[];
+}> {
+  const formData = await req.formData();
+
+  const mode = normalize(formData.get("mode")) as ExportMode;
+  const target = normalize(formData.get("target")) as ExportTarget;
+
+  if (!["ma_dk", "mapping", "file"].includes(mode)) {
+    throw new Error("Chế độ xuất không hợp lệ");
+  }
+
+  if (!["students", "graduation", "sat_hach"].includes(target)) {
+    throw new Error("Loại dữ liệu xuất không hợp lệ");
+  }
+
+  if (mode === "ma_dk") {
+    const maDkText = normalize(formData.get("maDkText"));
+    const maDkList = parseMaDkText(maDkText);
+
+    if (!maDkList.length) {
+      throw new Error("Vui lòng nhập danh sách MA_DK");
+    }
+
+    return {
+      mode,
+      target,
+      maDkList,
+      mappingList: [],
+    };
+  }
+
+  if (mode === "mapping") {
+    const mappingText = normalize(formData.get("mappingText"));
+    const mappingList = parseMappingText(mappingText);
+
+    if (!mappingList.length) {
+      throw new Error("Vui lòng nhập danh sách mapping theo dạng CCCD | Khóa học");
+    }
+
+    return {
+      mode,
+      target,
+      maDkList: [],
+      mappingList,
+    };
+  }
+
+  const file = formData.get("file") as File | null;
+  if (!file) {
+    throw new Error("Chưa chọn file tải lên");
+  }
+
+  const rows = await parseRowsFromFile(file);
+
+  if (!rows.length) {
+    throw new Error("File không có dữ liệu");
+  }
+
+  const maDkList = uniqueStrings(
+    rows.map((row) =>
+      getCell(row, ["MA_DK", "ma_dk", "maDk", "Mã ĐK", "MaDK", "MADK"])
+    )
+  );
+
+  const mappingList: ParsedMapping[] = rows
+    .map((row) => {
+      const soCccd = getCell(row, ["CCCD", "cccd", "soCccd", "Số CCCD", "SO_CCCD"]);
+      const khoaHoc = getCell(row, [
+        "KHOA_HOC",
+        "Khóa học",
+        "khoaHoc",
+        "TEN_KHOA_HOC",
+        "tenKhoaHoc",
+      ]);
+
+      return { soCccd, khoaHoc };
+    })
+    .filter((item) => item.soCccd && item.khoaHoc);
+
+  if (!maDkList.length && !mappingList.length) {
+    throw new Error("File phải có cột MA_DK hoặc cột CCCD + Khóa học");
+  }
+
+  return {
+    mode,
+    target,
+    maDkList,
+    mappingList,
+  };
+}
+
+async function findStudentsByMaDk(maDkList: string[]) {
+  return prisma.student.findMany({
+    where: {
+      maDk: {
+        in: maDkList,
+      },
+    },
+    include: {
+      course: true,
+      medicalChecks: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+      graduationResults: {
+        orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
+        take: 1,
+      },
+      examResults: {
+        orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
+        take: 1,
+      },
+    },
+  });
+}
+
+async function findStudentsByMapping(mappingList: ParsedMapping[]) {
+  const students = await prisma.student.findMany({
+    where: {
+      OR: mappingList.map((item) => ({
+        AND: [
+          { soCccd: item.soCccd },
+          {
+            course: {
+              is: {
+                tenKhoaHoc: item.khoaHoc,
+              },
+            },
+          },
+        ],
+      })),
+    },
+    include: {
+      course: true,
+      medicalChecks: {
+        orderBy: { createdAt: "desc" },
+        take: 1,
+      },
+      graduationResults: {
+        orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
+        take: 1,
+      },
+      examResults: {
+        orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
+        take: 1,
+      },
+    },
+  });
+
+  return students;
+}
+
+function buildStudentRows(
+  orderedKeys: string[],
+  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  mode: ExportMode,
+  mappingList: ParsedMapping[]
+) {
+  if (mode === "mapping") {
+    return mappingList.map((item) => {
+      const student = students.find(
+        (s) =>
+          normalize(s.soCccd) === item.soCccd &&
+          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
+      );
+
+      const medical = student?.medicalChecks?.[0];
+
+      return {
+        CCCD_TRA_CUU: item.soCccd,
+        KHOA_HOC_TRA_CUU: item.khoaHoc,
+        MA_DK: student?.maDk || "",
+        HO_TEN: student?.hoTen || "",
+        NGAY_SINH: parseDate(student?.ngaySinh),
+        CCCD: student?.soCccd || "",
+        SO_DIEN_THOAI: student?.soDienThoai || "",
+        DIA_CHI: student?.diaChi || "",
+        KHOA_HOC: student?.course?.tenKhoaHoc || "",
+        MA_KHOA_HOC: student?.course?.maKhoaHoc || "",
+        NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKhamSucKhoe),
+        NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan),
+        GHI_CHU: student?.ghiChu || "",
+      };
+    });
+  }
+
+  return orderedKeys.map((maDk) => {
+    const student = students.find((s) => normalize(s.maDk) === maDk);
+    const medical = student?.medicalChecks?.[0];
+
+    return {
+      MA_DK: maDk,
+      HO_TEN: student?.hoTen || "",
+      NGAY_SINH: parseDate(student?.ngaySinh),
+      CCCD: student?.soCccd || "",
+      SO_DIEN_THOAI: student?.soDienThoai || "",
+      DIA_CHI: student?.diaChi || "",
+      KHOA_HOC: student?.course?.tenKhoaHoc || "",
+      MA_KHOA_HOC: student?.course?.maKhoaHoc || "",
+      NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKhamSucKhoe),
+      NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan),
+      GHI_CHU: student?.ghiChu || "",
+    };
+  });
+}
+
+function buildGraduationRows(
+  orderedKeys: string[],
+  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  mode: ExportMode,
+  mappingList: ParsedMapping[]
+) {
+  if (mode === "mapping") {
+    return mappingList.map((item) => {
+      const student = students.find(
+        (s) =>
+          normalize(s.soCccd) === item.soCccd &&
+          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
+      );
+
+      const graduation = student?.graduationResults?.[0];
+
+      return {
+        CCCD_TRA_CUU: item.soCccd,
+        KHOA_HOC_TRA_CUU: item.khoaHoc,
+        MA_DK: student?.maDk || "",
+        HO_TEN: student?.hoTen || "",
+        CCCD: student?.soCccd || "",
+        KHOA_HOC: student?.course?.tenKhoaHoc || "",
+        NGAY_THI_TN: parseDate(graduation?.ngayThi),
+        LY_THUYET: graduation?.lyThuyet || "",
+        MO_PHONG: graduation?.moPhong || "",
+        SA_HINH: graduation?.saHinh || "",
+        DUONG_TRUONG: graduation?.duongTruong || "",
+        KET_QUA_TN: graduation?.ketQua || "",
+        GHI_CHU_TN: graduation?.ghiChu || "",
+      };
+    });
+  }
+
+  return orderedKeys.map((maDk) => {
+    const student = students.find((s) => normalize(s.maDk) === maDk);
+    const graduation = student?.graduationResults?.[0];
+
+    return {
+      MA_DK: maDk,
+      HO_TEN: student?.hoTen || "",
+      CCCD: student?.soCccd || "",
+      KHOA_HOC: student?.course?.tenKhoaHoc || "",
+      NGAY_THI_TN: parseDate(graduation?.ngayThi),
+      LY_THUYET: graduation?.lyThuyet || "",
+      MO_PHONG: graduation?.moPhong || "",
+      SA_HINH: graduation?.saHinh || "",
+      DUONG_TRUONG: graduation?.duongTruong || "",
+      KET_QUA_TN: graduation?.ketQua || "",
+      GHI_CHU_TN: graduation?.ghiChu || "",
+    };
+  });
+}
+
+function buildSatHachRows(
+  orderedKeys: string[],
+  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  mode: ExportMode,
+  mappingList: ParsedMapping[]
+) {
+  if (mode === "mapping") {
+    return mappingList.map((item) => {
+      const student = students.find(
+        (s) =>
+          normalize(s.soCccd) === item.soCccd &&
+          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
+      );
+
+      const exam = student?.examResults?.[0];
+
+      return {
+        CCCD_TRA_CUU: item.soCccd,
+        KHOA_HOC_TRA_CUU: item.khoaHoc,
+        MA_DK: student?.maDk || "",
+        HO_TEN: student?.hoTen || "",
+        CCCD: student?.soCccd || "",
+        KHOA_HOC: student?.course?.tenKhoaHoc || "",
+        NGAY_SAT_HACH: parseDate(exam?.ngayThi),
+        KET_QUA_SAT_HACH: exam?.ketQua || "",
+        GHI_CHU_SAT_HACH: exam?.ghiChu || "",
+      };
+    });
+  }
+
+  return orderedKeys.map((maDk) => {
+    const student = students.find((s) => normalize(s.maDk) === maDk);
+    const exam = student?.examResults?.[0];
+
+    return {
+      MA_DK: maDk,
+      HO_TEN: student?.hoTen || "",
+      CCCD: student?.soCccd || "",
+      KHOA_HOC: student?.course?.tenKhoaHoc || "",
+      NGAY_SAT_HACH: parseDate(exam?.ngayThi),
+      KET_QUA_SAT_HACH: exam?.ketQua || "",
+      GHI_CHU_SAT_HACH: exam?.ghiChu || "",
+    };
+  });
+}
+
+function createWorkbookBuffer(sheetName: string, rows: Record<string, unknown>[]) {
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+  return XLSX.write(workbook, {
+    type: "buffer",
+    bookType: "xlsx",
+  });
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    const { mode, target, maDkList, mappingList } = await readInput(req);
 
-    const mode = String(formData.get("mode") || "");
-    const format = String(formData.get("format") || "xlsx");
-    const textValue = String(formData.get("textValue") || "");
-    const file = formData.get("file") as File | null;
+    let students:
+      | Awaited<ReturnType<typeof findStudentsByMaDk>>
+      | Awaited<ReturnType<typeof findStudentsByMapping>> = [];
 
-    let maDkList: string[] = [];
-
-    if (mode === "ma_dk" && textValue) {
-      maDkList = textValue
-        .split("\n")
-        .map((x) => x.trim())
-        .filter(Boolean);
+    if (mode === "mapping") {
+      students = await findStudentsByMapping(mappingList);
+    } else {
+      students = await findStudentsByMaDk(maDkList);
     }
 
-    if (mode === "file" && file) {
-      const buffer = Buffer.from(await file.arrayBuffer());
-      const workbook = XLSX.read(buffer, { type: "buffer" });
+    const orderedKeys = mode === "mapping" ? [] : maDkList;
 
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const json: Record<string, any>[] = XLSX.utils.sheet_to_json(sheet, {
-        defval: "",
-      });
+    let rows: Record<string, unknown>[] = [];
+    let sheetName = "DATA";
+    let filename = "export.xlsx";
 
-      maDkList = json
-        .map((row) => String(row.ma_dk || row.MA_DK || row.maDk || "").trim())
-        .filter(Boolean);
+    if (target === "students") {
+      rows = buildStudentRows(orderedKeys, students, mode, mappingList);
+      sheetName = "HOC_VIEN";
+      filename = "export-hoc-vien.xlsx";
+    } else if (target === "graduation") {
+      rows = buildGraduationRows(orderedKeys, students, mode, mappingList);
+      sheetName = "TOT_NGHIEP";
+      filename = "export-tot-nghiep.xlsx";
+    } else if (target === "sat_hach") {
+      rows = buildSatHachRows(orderedKeys, students, mode, mappingList);
+      sheetName = "SAT_HACH";
+      filename = "export-sat-hach.xlsx";
     }
 
-    if (maDkList.length === 0) {
-      return new Response("Không có dữ liệu MA_DK", { status: 400 });
-    }
+    const outputBuffer = createWorkbookBuffer(sheetName, rows);
 
-    const students = await prisma.student.findMany({
-      where: {
-        maDk: {
-          in: maDkList,
-        },
-      },
-      include: {
-        course: true,
-        medicalChecks: {
-          orderBy: { createdAt: "desc" },
-          take: 1,
-        },
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
-    const exportRows = students.map((s) => {
-      const latestMedical = s.medicalChecks[0];
-
-      return {
-        ma_dk: s.maDk || "",
-        so_ho_so: s.soHoSo || "",
-        so_cmt: s.soCmt || "",
-        ho_va_ten: s.hoVaTen || "",
-        ngay_sinh: formatDate(s.ngaySinh),
-        so_dien_thoai: s.soDienThoai || "",
-        ghi_chu: s.ghiChu || "",
-        hang_gplx: s.hangGplx || "",
-        hang_dao_tao: s.hangDaoTao || "",
-        ngay_nhan_ho_so: formatDate(s.ngayNhanHoSo),
-        ma_khoa_hoc: s.course?.maKhoaHoc || "",
-        ten_khoa_hoc: s.course?.tenKhoaHoc || "",
-        ngay_kham_suc_khoe: formatDate(latestMedical?.ngayKham),
-        ngay_het_han_suc_khoe: formatDate(latestMedical?.ngayHetHan),
-      };
-    });
-
-    if (exportRows.length === 0) {
-      return new Response("Không tìm thấy học viên phù hợp", { status: 404 });
-    }
-
-    if (format === "csv") {
-      const header = Object.keys(exportRows[0]).join(",");
-      const rows = exportRows.map((row) =>
-        Object.values(row)
-          .map((value) => {
-            const str = String(value ?? "");
-            if (str.includes(",") || str.includes('"') || str.includes("\n")) {
-              return `"${str.replace(/"/g, '""')}"`;
-            }
-            return str;
-          })
-          .join(",")
-      );
-
-      const csv = [header, ...rows].join("\n");
-
-      return new Response(csv, {
-        headers: {
-          "Content-Type": "text/csv; charset=utf-8",
-          "Content-Disposition": 'attachment; filename="export-ma-dk.csv"',
-        },
-      });
-    }
-
-    const worksheet = XLSX.utils.json_to_sheet(exportRows);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "DATA");
-
-    const buffer = XLSX.write(workbook, {
-      type: "buffer",
-      bookType: "xlsx",
-    });
-
-    return new Response(buffer, {
+    return new NextResponse(outputBuffer, {
+      status: 200,
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": 'attachment; filename="export-ma-dk.xlsx"',
+        "Content-Disposition": `attachment; filename="${filename}"`,
       },
     });
-  } catch (error: any) {
-    return new Response(error?.message || "Lỗi server", { status: 500 });
+  } catch (error) {
+    console.error("POST /api/export-ma-dk error:", error);
+
+    return NextResponse.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "Xuất dữ liệu thất bại",
+      },
+      { status: 500 }
+    );
   }
 }
