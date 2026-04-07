@@ -182,7 +182,17 @@ async function readInput(
 
   const mappingList: ParsedMapping[] = rows
     .map((row) => {
-      const soCccd = getCell(row, ["CCCD", "cccd", "soCccd", "Số CCCD", "SO_CCCD"]);
+      const soCccd = getCell(row, [
+        "CCCD",
+        "cccd",
+        "soCccd",
+        "Số CCCD",
+        "SO_CCCD",
+        "SO_CMT",
+        "soCmt",
+        "CMT",
+      ]);
+
       const khoaHoc = getCell(row, [
         "KHOA_HOC",
         "Khóa học",
@@ -224,7 +234,7 @@ async function findStudentsByMaDk(maDkList: string[]) {
         orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
         take: 1,
       },
-      examResults: {
+      practicalResults: {
         orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
         take: 1,
       },
@@ -233,11 +243,11 @@ async function findStudentsByMaDk(maDkList: string[]) {
 }
 
 async function findStudentsByMapping(mappingList: ParsedMapping[]) {
-  const students = await prisma.student.findMany({
+  return prisma.student.findMany({
     where: {
       OR: mappingList.map((item) => ({
         AND: [
-          { soCccd: item.soCccd },
+          { soCmt: item.soCccd },
           {
             course: {
               is: {
@@ -258,45 +268,57 @@ async function findStudentsByMapping(mappingList: ParsedMapping[]) {
         orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
         take: 1,
       },
-      examResults: {
+      practicalResults: {
         orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
         take: 1,
       },
     },
   });
+}
 
-  return students;
+type StudentWithRelations = Awaited<ReturnType<typeof findStudentsByMaDk>>[number];
+
+function findStudentByMapping(
+  students: StudentWithRelations[],
+  item: ParsedMapping
+) {
+  return students.find(
+    (s) =>
+      normalize(s.soCmt) === item.soCccd &&
+      normalize(s.course?.tenKhoaHoc) === item.khoaHoc
+  );
 }
 
 function buildStudentRows(
   orderedKeys: string[],
-  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  students: StudentWithRelations[],
   mode: ExportMode,
   mappingList: ParsedMapping[]
 ) {
   if (mode === "mapping") {
     return mappingList.map((item) => {
-      const student = students.find(
-        (s) =>
-          normalize(s.soCccd) === item.soCccd &&
-          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
-      );
-
+      const student = findStudentByMapping(students, item);
       const medical = student?.medicalChecks?.[0];
 
       return {
         CCCD_TRA_CUU: item.soCccd,
         KHOA_HOC_TRA_CUU: item.khoaHoc,
         MA_DK: student?.maDk || "",
-        HO_TEN: student?.hoTen || "",
+        HO_VA_TEN: student?.hoVaTen || "",
         NGAY_SINH: parseDate(student?.ngaySinh),
-        CCCD: student?.soCccd || "",
+        SO_CMT: student?.soCmt || "",
         SO_DIEN_THOAI: student?.soDienThoai || "",
-        DIA_CHI: student?.diaChi || "",
+        GIOI_TINH: student?.gioiTinh || "",
+        SO_HO_SO: student?.soHoSo || "",
+        NGAY_NHAN_HO_SO: parseDate(student?.ngayNhanHoSo),
+        HANG_GPLX: student?.hangGplx || "",
+        HANG_DAO_TAO: student?.hangDaoTao || "",
+        GIAO_VIEN: student?.giaoVien || "",
+        CTV: student?.ctv || "",
         KHOA_HOC: student?.course?.tenKhoaHoc || "",
         MA_KHOA_HOC: student?.course?.maKhoaHoc || "",
-        NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKhamSucKhoe),
-        NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan),
+        NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKham ?? student?.ngayKhamSucKhoe),
+        NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan ?? student?.ngayHetHan),
         GHI_CHU: student?.ghiChu || "",
       };
     });
@@ -308,15 +330,21 @@ function buildStudentRows(
 
     return {
       MA_DK: maDk,
-      HO_TEN: student?.hoTen || "",
+      HO_VA_TEN: student?.hoVaTen || "",
       NGAY_SINH: parseDate(student?.ngaySinh),
-      CCCD: student?.soCccd || "",
+      SO_CMT: student?.soCmt || "",
       SO_DIEN_THOAI: student?.soDienThoai || "",
-      DIA_CHI: student?.diaChi || "",
+      GIOI_TINH: student?.gioiTinh || "",
+      SO_HO_SO: student?.soHoSo || "",
+      NGAY_NHAN_HO_SO: parseDate(student?.ngayNhanHoSo),
+      HANG_GPLX: student?.hangGplx || "",
+      HANG_DAO_TAO: student?.hangDaoTao || "",
+      GIAO_VIEN: student?.giaoVien || "",
+      CTV: student?.ctv || "",
       KHOA_HOC: student?.course?.tenKhoaHoc || "",
       MA_KHOA_HOC: student?.course?.maKhoaHoc || "",
-      NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKhamSucKhoe),
-      NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan),
+      NGAY_KHAM_SUC_KHOE: parseDate(medical?.ngayKham ?? student?.ngayKhamSucKhoe),
+      NGAY_HET_HAN_SK: parseDate(medical?.ngayHetHan ?? student?.ngayHetHan),
       GHI_CHU: student?.ghiChu || "",
     };
   });
@@ -324,34 +352,29 @@ function buildStudentRows(
 
 function buildGraduationRows(
   orderedKeys: string[],
-  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  students: StudentWithRelations[],
   mode: ExportMode,
   mappingList: ParsedMapping[]
 ) {
   if (mode === "mapping") {
     return mappingList.map((item) => {
-      const student = students.find(
-        (s) =>
-          normalize(s.soCccd) === item.soCccd &&
-          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
-      );
-
+      const student = findStudentByMapping(students, item);
       const graduation = student?.graduationResults?.[0];
 
       return {
         CCCD_TRA_CUU: item.soCccd,
         KHOA_HOC_TRA_CUU: item.khoaHoc,
         MA_DK: student?.maDk || "",
-        HO_TEN: student?.hoTen || "",
-        CCCD: student?.soCccd || "",
+        HO_VA_TEN: student?.hoVaTen || "",
+        SO_CMT: student?.soCmt || "",
         KHOA_HOC: student?.course?.tenKhoaHoc || "",
         NGAY_THI_TN: parseDate(graduation?.ngayThi),
         LY_THUYET: graduation?.lyThuyet || "",
         MO_PHONG: graduation?.moPhong || "",
-        SA_HINH: graduation?.saHinh || "",
-        DUONG_TRUONG: graduation?.duongTruong || "",
+        HINH: graduation?.hinh || "",
+        DUONG: graduation?.duong || "",
         KET_QUA_TN: graduation?.ketQua || "",
-        GHI_CHU_TN: graduation?.ghiChu || "",
+        NOI_DUNG_ROT: graduation?.noiDungRot || "",
       };
     });
   }
@@ -362,45 +385,42 @@ function buildGraduationRows(
 
     return {
       MA_DK: maDk,
-      HO_TEN: student?.hoTen || "",
-      CCCD: student?.soCccd || "",
+      HO_VA_TEN: student?.hoVaTen || "",
+      SO_CMT: student?.soCmt || "",
       KHOA_HOC: student?.course?.tenKhoaHoc || "",
       NGAY_THI_TN: parseDate(graduation?.ngayThi),
       LY_THUYET: graduation?.lyThuyet || "",
       MO_PHONG: graduation?.moPhong || "",
-      SA_HINH: graduation?.saHinh || "",
-      DUONG_TRUONG: graduation?.duongTruong || "",
+      HINH: graduation?.hinh || "",
+      DUONG: graduation?.duong || "",
       KET_QUA_TN: graduation?.ketQua || "",
-      GHI_CHU_TN: graduation?.ghiChu || "",
+      NOI_DUNG_ROT: graduation?.noiDungRot || "",
     };
   });
 }
 
 function buildSatHachRows(
   orderedKeys: string[],
-  students: Awaited<ReturnType<typeof findStudentsByMaDk>>,
+  students: StudentWithRelations[],
   mode: ExportMode,
   mappingList: ParsedMapping[]
 ) {
   if (mode === "mapping") {
     return mappingList.map((item) => {
-      const student = students.find(
-        (s) =>
-          normalize(s.soCccd) === item.soCccd &&
-          normalize(s.course?.tenKhoaHoc) === item.khoaHoc
-      );
-
-      const exam = student?.examResults?.[0];
+      const student = findStudentByMapping(students, item);
+      const exam = student?.practicalResults?.[0];
 
       return {
         CCCD_TRA_CUU: item.soCccd,
         KHOA_HOC_TRA_CUU: item.khoaHoc,
         MA_DK: student?.maDk || "",
-        HO_TEN: student?.hoTen || "",
-        CCCD: student?.soCccd || "",
+        HO_VA_TEN: student?.hoVaTen || "",
+        SO_CMT: student?.soCmt || "",
         KHOA_HOC: student?.course?.tenKhoaHoc || "",
         NGAY_SAT_HACH: parseDate(exam?.ngayThi),
+        NGAY_DAT: parseDate(exam?.ngayDat),
         KET_QUA_SAT_HACH: exam?.ketQua || "",
+        NOI_DUNG_ROT: exam?.noiDungRot || "",
         GHI_CHU_SAT_HACH: exam?.ghiChu || "",
       };
     });
@@ -408,15 +428,17 @@ function buildSatHachRows(
 
   return orderedKeys.map((maDk) => {
     const student = students.find((s) => normalize(s.maDk) === maDk);
-    const exam = student?.examResults?.[0];
+    const exam = student?.practicalResults?.[0];
 
     return {
       MA_DK: maDk,
-      HO_TEN: student?.hoTen || "",
-      CCCD: student?.soCccd || "",
+      HO_VA_TEN: student?.hoVaTen || "",
+      SO_CMT: student?.soCmt || "",
       KHOA_HOC: student?.course?.tenKhoaHoc || "",
       NGAY_SAT_HACH: parseDate(exam?.ngayThi),
+      NGAY_DAT: parseDate(exam?.ngayDat),
       KET_QUA_SAT_HACH: exam?.ketQua || "",
+      NOI_DUNG_ROT: exam?.noiDungRot || "",
       GHI_CHU_SAT_HACH: exam?.ghiChu || "",
     };
   });
@@ -437,15 +459,10 @@ export async function POST(req: NextRequest) {
   try {
     const { mode, target, maDkList, mappingList } = await readInput(req);
 
-    let students:
-      | Awaited<ReturnType<typeof findStudentsByMaDk>>
-      | Awaited<ReturnType<typeof findStudentsByMapping>> = [];
-
-    if (mode === "mapping") {
-      students = await findStudentsByMapping(mappingList);
-    } else {
-      students = await findStudentsByMaDk(maDkList);
-    }
+    const students =
+      mode === "mapping"
+        ? await findStudentsByMapping(mappingList)
+        : await findStudentsByMaDk(maDkList);
 
     const orderedKeys = mode === "mapping" ? [] : maDkList;
 
@@ -461,7 +478,7 @@ export async function POST(req: NextRequest) {
       rows = buildGraduationRows(orderedKeys, students, mode, mappingList);
       sheetName = "TOT_NGHIEP";
       filename = "export-tot-nghiep.xlsx";
-    } else if (target === "sat_hach") {
+    } else {
       rows = buildSatHachRows(orderedKeys, students, mode, mappingList);
       sheetName = "SAT_HACH";
       filename = "export-sat-hach.xlsx";

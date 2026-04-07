@@ -52,7 +52,7 @@ export default function ExportMaDkPage() {
         formData.append("maDkText", maDkText);
       } else if (mode === "mapping") {
         formData.append("mappingText", mappingText);
-      } else if (mode === "file") {
+      } else {
         if (!file) {
           alert("Vui lòng chọn file tải lên");
           return;
