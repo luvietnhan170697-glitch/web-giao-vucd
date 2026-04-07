@@ -1,26 +1,62 @@
-import { NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { NextRequest, NextResponse } from "next/server";
+import { PrismaClient } from "@prisma/client";
 
-function formatDate(value: Date | string | null | undefined) {
-  if (!value) return null;
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toISOString();
+const prisma = new PrismaClient();
+
+function normalize(value: string | null | undefined) {
+  return (value || "").trim() || "-";
+}
+
+function calcGraduationStatus(result: {
+  lyThuyet?: string | null;
+  moPhong?: string | null;
+  hinh?: string | null;
+  duong?: string | null;
+  ketQua?: string | null;
+}) {
+  if (result.ketQua && result.ketQua.trim()) return result.ketQua;
+
+  const parts = [
+    normalize(result.lyThuyet).toLowerCase(),
+    normalize(result.moPhong).toLowerCase(),
+    normalize(result.hinh).toLowerCase(),
+    normalize(result.duong).toLowerCase(),
+  ];
+
+  const hasFail = parts.some(
+    (item) =>
+      item.includes("rớt") ||
+      item.includes("rot") ||
+      item.includes("vắng") ||
+      item.includes("vang") ||
+      item.includes("không đạt") ||
+      item.includes("khong dat")
+  );
+
+  if (hasFail) return "Không đạt";
+
+  const allPass =
+    parts.length > 0 &&
+    parts.every((item) => item.includes("đạt") || item.includes("dat"));
+
+  if (allPass) return "Đạt";
+
+  return "-";
 }
 
 export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
+  _req: NextRequest,
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await params;
+    const { id } = await context.params;
 
     const student = await prisma.student.findUnique({
       where: { id },
       include: {
         course: true,
         medicalChecks: {
-          orderBy: { createdAt: "desc" },
+          orderBy: [{ ngayKham: "desc" }, { createdAt: "desc" }],
           take: 1,
         },
         graduationResults: {
@@ -31,88 +67,70 @@ export async function GET(
           orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
           take: 1,
         },
+        examComponents: {
+          orderBy: [{ ngayDat: "desc" }, { createdAt: "desc" }],
+        },
       },
     });
 
     if (!student) {
       return NextResponse.json(
-        { ok: false, message: "Không tìm thấy học viên" },
+        { error: "Không tìm thấy học viên" },
         { status: 404 }
       );
     }
 
-    const medical = student.medicalChecks?.[0] ?? null;
-    const graduation = student.graduationResults?.[0] ?? null;
-    const exam = student.practicalResults?.[0] ?? null;
-
-    const graduationDone = !!graduation;
-    const examDone = !!exam;
-    const medicalDone = !!medical;
+    const medical = student.medicalChecks?.[0] || null;
+    const graduation = student.graduationResults?.[0] || null;
+    const practical = student.practicalResults?.[0] || null;
 
     return NextResponse.json({
-      ok: true,
-      progress: {
-        student: {
-          id: student.id,
-          maDk: student.maDk,
-          hoTen: student.hoTen,
-          soCccd: student.soCccd,
-          soDienThoai: student.soDienThoai,
-          ghiChu: student.ghiChu,
-        },
-        course: student.course
-          ? {
-              id: student.course.id,
-              maKhoaHoc: student.course.maKhoaHoc,
-              tenKhoaHoc: student.course.tenKhoaHoc,
-              ngayKhaiGiang: formatDate(student.course.ngayKhaiGiang),
-              ngayBeGiang: formatDate(student.course.ngayBeGiang),
-              ngaySatHach: formatDate(student.course.ngaySatHach),
-            }
-          : null,
-        medical: medical
-          ? {
-              ngayKhamSucKhoe: formatDate(medical.ngayKhamSucKhoe),
-              ngayHetHan: formatDate(medical.ngayHetHan),
-              ketQua: medical.ketQua ?? null,
-              ghiChu: medical.ghiChu ?? null,
-            }
-          : null,
-        graduation: graduation
-          ? {
-              ngayThi: formatDate(graduation.ngayThi),
-              lyThuyet: graduation.lyThuyet ?? null,
-              moPhong: graduation.moPhong ?? null,
-              saHinh: graduation.saHinh ?? null,
-              duongTruong: graduation.duongTruong ?? null,
-              ketQua: graduation.ketQua ?? null,
-              ghiChu: graduation.ghiChu ?? null,
-            }
-          : null,
-        exam: exam
-          ? {
-              ngayThi: formatDate(exam.ngayThi),
-              ketQua: exam.ketQua ?? null,
-              ghiChu: exam.ghiChu ?? null,
-            }
-          : null,
-        summary: {
-          medicalDone,
-          graduationDone,
-          examDone,
-          completedLevel:
-            medicalDone && graduationDone && examDone
-              ? "Hoàn tất"
-              : medicalDone || graduationDone || examDone
-              ? "Đang học"
-              : "Mới nhập",
-        },
+      id: student.id,
+      maDk: student.maDk || "",
+      hoVaTen: student.hoVaTen || "",
+      course: student.course
+        ? {
+            id: student.course.id,
+            maKhoaHoc: student.course.maKhoaHoc || "",
+            tenKhoaHoc: student.course.tenKhoaHoc || "",
+          }
+        : null,
+      sucKhoe: {
+        ngayKham: medical?.ngayKham || student.ngayKhamSucKhoe || null,
+        ngayHetHan: medical?.ngayHetHan || student.ngayHetHan || null,
       },
+      totNghiep: graduation
+        ? {
+            ngayThi: graduation.ngayThi || null,
+            lyThuyet: normalize(graduation.lyThuyet),
+            moPhong: normalize(graduation.moPhong),
+            hinh: normalize(graduation.hinh),
+            duong: normalize(graduation.duong),
+            ketQua: calcGraduationStatus(graduation),
+            noiDungRot: normalize(graduation.noiDungRot),
+          }
+        : null,
+      satHach: practical
+        ? {
+            ngayThi: practical.ngayThi || null,
+            ngayDat: practical.ngayDat || null,
+            ketQua: normalize(practical.ketQua),
+            noiDungRot: normalize(practical.noiDungRot),
+            ghiChu: normalize(practical.ghiChu),
+          }
+        : null,
+      examComponents: student.examComponents.map((item) => ({
+        id: item.id,
+        tenNoiDung: item.tenNoiDung || "",
+        ngayDat: item.ngayDat || null,
+        baoLuuDenNgay: item.baoLuuDenNgay || null,
+        conHieuLuc: item.conHieuLuc,
+        ghiChu: item.ghiChu || "",
+      })),
     });
-  } catch (error) {
-    console.error("GET /api/students/[id]/progress error:", error);
+  } catch (error: any) {
     return NextResponse.json(
-      { ok: false, message: "Lấy tiến độ học viên thất bại" },
+      { error: error?.message || "Lỗi lấy tiến độ học viên" },
       { status: 500 }
     );
   }
