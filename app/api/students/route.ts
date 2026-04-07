@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
         giaoVien: s.giaoVien || "",
         ctv: s.ctv || "",
         ghiChu: s.ghiChu || "",
-        ngayKhamSucKhoe: s.medicalChecks?.[0]?.ngayKham || null,
+        ngayKhamSucKhoe: s.medicalChecks?.[0]?.ngayKham || s.ngayKhamSucKhoe || null,
         courseId: s.courseId || "",
         course: s.course
           ? {
