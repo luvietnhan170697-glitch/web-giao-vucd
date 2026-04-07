@@ -3,6 +3,12 @@ import { jwtVerify } from "jose";
 import { COOKIE_NAME } from "./lib/auth";
 import { hasApiAccess, hasPageAccess } from "./lib/permissions";
 
+const { pathname } = req.nextUrl;
+
+// 🚀 BẮT BUỘC phải có đoạn này
+if (pathname.startsWith("/api/blob/upload-xml")) {
+  return NextResponse.next();
+}
 const publicPaths = ["/login", "/unauthorized"];
 const publicApiPaths = ["/api/auth/login"];
 
