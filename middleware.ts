@@ -9,6 +9,7 @@ const { pathname } = req.nextUrl;
 if (pathname.startsWith("/api/blob/upload-xml")) {
   return NextResponse.next();
 }
+
 const publicPaths = ["/login", "/unauthorized"];
 const publicApiPaths = ["/api/auth/login"];
 
