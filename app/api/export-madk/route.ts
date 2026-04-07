@@ -16,11 +16,21 @@ function normalize(value: unknown): string {
   return value == null ? "" : String(value).trim();
 }
 
+function pad2(value: number): string {
+  return String(value).padStart(2, "0");
+}
+
 function parseDate(value: Date | string | null | undefined): string {
   if (!value) return "";
+
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString("vi-VN");
+
+  const day = pad2(d.getDate());
+  const month = pad2(d.getMonth() + 1);
+  const year = d.getFullYear();
+
+  return `${day}/${month}/${year}`;
 }
 
 function uniqueStrings(values: string[]): string[] {

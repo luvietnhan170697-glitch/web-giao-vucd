@@ -60,7 +60,6 @@ export default function ExportMaDkPage() {
         formData.append("file", file);
       }
 
-      // SỬA CHỖ NÀY: gọi đúng folder API thật của bạn
       const response = await fetch("/api/export-madk", {
         method: "POST",
         body: formData,
@@ -106,56 +105,75 @@ export default function ExportMaDkPage() {
 
   return (
     <main className="space-y-6">
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
+      <section>
         <h1 className="text-3xl font-bold text-slate-900">Export MA_DK</h1>
         <p className="mt-2 text-sm text-slate-500">
           Xuất dữ liệu theo danh sách MA_DK, mapping hoặc file tải lên.
         </p>
       </section>
 
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-5 text-xl font-semibold text-slate-900">
-          Bộ lọc xuất dữ liệu
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-6 text-2xl font-semibold text-slate-900">
+          Tải file xuất dữ liệu
         </h2>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Loại dữ liệu xuất
-            </label>
-            <select
-              value={target}
-              onChange={(e) => setTarget(e.target.value as ExportTarget)}
-              className="w-full rounded-xl border px-4 py-3 outline-none focus:border-blue-500"
-            >
-              <option value="students">Thông tin học viên</option>
-              <option value="graduation">Kết quả tốt nghiệp</option>
-              <option value="sat_hach">Kết quả sát hạch</option>
-            </select>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
+                Loại dữ liệu xuất
+              </label>
+              <select
+                value={target}
+                onChange={(e) => setTarget(e.target.value as ExportTarget)}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-slate-400"
+              >
+                <option value="students">Thông tin học viên</option>
+                <option value="graduation">Kết quả tốt nghiệp</option>
+                <option value="sat_hach">Kết quả sát hạch</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
+                Chế độ xuất
+              </label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as ExportMode)}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-slate-400"
+              >
+                <option value="file">Xuất theo file tải lên</option>
+                <option value="ma_dk">Xuất theo MA_DK</option>
+                <option value="mapping">Xuất theo Mapping CCCD | Khóa học</option>
+              </select>
+            </div>
           </div>
 
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700">
-              Chế độ xuất
-            </label>
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value as ExportMode)}
-              className="w-full rounded-xl border px-4 py-3 outline-none focus:border-blue-500"
-            >
-              <option value="file">Xuất theo file tải lên</option>
-              <option value="ma_dk">Xuất theo MA_DK</option>
-              <option value="mapping">Xuất theo Mapping CCCD | Khóa học</option>
-            </select>
-          </div>
-
-          <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
             {helperText}
           </div>
 
+          {mode === "file" && (
+            <div>
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
+                File dữ liệu
+              </label>
+              <input
+                type="file"
+                accept={ACCEPTED_FILE_TYPES}
+                onChange={handleFileChange}
+                className="block h-11 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+              />
+              <p className="mt-2 text-sm text-slate-500">
+                {file ? `Đã chọn: ${file.name}` : "Chưa chọn file"}
+              </p>
+            </div>
+          )}
+
           {mode === "ma_dk" && (
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
                 Danh sách MA_DK
               </label>
               <textarea
@@ -163,14 +181,14 @@ export default function ExportMaDkPage() {
                 onChange={(e) => setMaDkText(e.target.value)}
                 rows={10}
                 placeholder={`DK001\nDK002\nDK003`}
-                className="w-full rounded-xl border px-4 py-3 outline-none focus:border-blue-500"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
               />
             </div>
           )}
 
           {mode === "mapping" && (
             <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
+              <label className="mb-2 block text-sm font-semibold text-slate-800">
                 Danh sách Mapping
               </label>
               <textarea
@@ -178,25 +196,8 @@ export default function ExportMaDkPage() {
                 onChange={(e) => setMappingText(e.target.value)}
                 rows={10}
                 placeholder={`079123456789 | K01BSS/25ĐL2\n012345678901 | K02B2/25`}
-                className="w-full rounded-xl border px-4 py-3 outline-none focus:border-blue-500"
+                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
               />
-            </div>
-          )}
-
-          {mode === "file" && (
-            <div>
-              <label className="mb-2 block text-sm font-semibold text-slate-700">
-                Chọn file danh sách để xuất
-              </label>
-              <input
-                type="file"
-                accept={ACCEPTED_FILE_TYPES}
-                onChange={handleFileChange}
-                className="block w-full rounded-xl border px-4 py-3"
-              />
-              <div className="mt-2 text-sm text-slate-500">
-                {file ? `Đã chọn: ${file.name}` : "Chưa chọn file"}
-              </div>
             </div>
           )}
 
@@ -204,7 +205,7 @@ export default function ExportMaDkPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-emerald-600 px-5 py-3 font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
             >
               {submitting ? "Đang xuất..." : "Xuất dữ liệu"}
             </button>
@@ -213,12 +214,36 @@ export default function ExportMaDkPage() {
               type="button"
               onClick={handleReset}
               disabled={submitting}
-              className="rounded-xl border px-5 py-3 font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-300 disabled:opacity-60"
             >
               Làm trống
             </button>
           </div>
         </form>
+      </section>
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-4 text-xl font-semibold text-slate-900">
+          Hướng dẫn nhập liệu
+        </h2>
+
+        <div className="space-y-3 text-sm text-slate-700">
+          <p>
+            <strong>Xuất theo MA_DK:</strong> mỗi dòng nhập 1 mã đăng ký.
+          </p>
+          <p>
+            <strong>Mapping:</strong> mỗi dòng nhập theo dạng{" "}
+            <strong>CCCD | Khóa học</strong>.
+          </p>
+          <p>
+            <strong>Xuất theo file:</strong> tải file Excel hoặc CSV có cột{" "}
+            <strong>MA_DK</strong> hoặc <strong>CCCD + Khóa học</strong>.
+          </p>
+          <p>
+            Có thể xuất: <strong>Thông tin học viên</strong>,{" "}
+            <strong>Kết quả tốt nghiệp</strong>, <strong>Kết quả sát hạch</strong>.
+          </p>
+        </div>
       </section>
     </main>
   );
