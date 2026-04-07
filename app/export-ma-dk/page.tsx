@@ -60,7 +60,8 @@ export default function ExportMaDkPage() {
         formData.append("file", file);
       }
 
-      const response = await fetch("/api/export-ma-dk", {
+      // SỬA CHỖ NÀY: gọi đúng folder API thật của bạn
+      const response = await fetch("/api/export-madk", {
         method: "POST",
         body: formData,
       });
@@ -218,34 +219,6 @@ export default function ExportMaDkPage() {
             </button>
           </div>
         </form>
-      </section>
-
-      <section className="rounded-2xl border bg-white p-6 shadow-sm">
-        <h2 className="mb-4 text-xl font-semibold text-slate-900">
-          Hướng dẫn nhập liệu
-        </h2>
-
-        <div className="space-y-3 text-sm text-slate-700">
-          <p>
-            <strong>Chế độ Xuất theo MA_DK:</strong> mỗi dòng nhập 1 MA_DK.
-          </p>
-          <p>
-            <strong>Chế độ Mapping:</strong> mỗi dòng nhập theo dạng{" "}
-            <strong>CCCD | Khóa học</strong>.
-          </p>
-          <p>
-            <strong>Chế độ Xuất theo file tải lên:</strong> upload file Excel hoặc
-            CSV chứa danh sách cần truy vấn.
-          </p>
-          <p>
-            File tải lên có thể chứa cột: <strong>MA_DK</strong> hoặc{" "}
-            <strong>CCCD</strong> + <strong>Khóa học</strong>.
-          </p>
-          <p>
-            Có thể xuất 3 nhóm dữ liệu: <strong>Thông tin học viên</strong>,{" "}
-            <strong>Tốt nghiệp</strong>, <strong>Sát hạch</strong>.
-          </p>
-        </div>
       </section>
     </main>
   );

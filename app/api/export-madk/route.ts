@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import * as XLSX from "xlsx";
 
+export const runtime = "nodejs";
+
 type ExportMode = "ma_dk" | "mapping" | "file";
 type ExportTarget = "students" | "graduation" | "sat_hach";
 
@@ -50,7 +52,6 @@ function parseMappingText(input: string): ParsedMapping[] {
     const khoaHoc = normalize(parts[1]);
 
     if (!soCccd || !khoaHoc) continue;
-
     mappings.push({ soCccd, khoaHoc });
   }
 
@@ -97,13 +98,11 @@ async function parseRowsFromFile(file: File): Promise<Record<string, unknown>[]>
   const lowerName = file.name.toLowerCase();
 
   if (lowerName.endsWith(".csv")) {
-    const csvText = readCsvText(buffer);
-    return parseCsvRows(csvText);
+    return parseCsvRows(readCsvText(buffer));
   }
 
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const firstSheetName = workbook.SheetNames[0];
-
   if (!firstSheetName) return [];
 
   const sheet = workbook.Sheets[firstSheetName];
@@ -139,12 +138,7 @@ async function readInput(
       throw new Error("Vui lòng nhập danh sách MA_DK");
     }
 
-    return {
-      mode,
-      target,
-      maDkList,
-      mappingList: [],
-    };
+    return { mode, target, maDkList, mappingList: [] };
   }
 
   if (mode === "mapping") {
@@ -155,12 +149,7 @@ async function readInput(
       throw new Error("Vui lòng nhập danh sách mapping theo dạng CCCD | Khóa học");
     }
 
-    return {
-      mode,
-      target,
-      maDkList: [],
-      mappingList,
-    };
+    return { mode, target, maDkList: [], mappingList };
   }
 
   const file = formData.get("file") as File | null;
@@ -169,7 +158,6 @@ async function readInput(
   }
 
   const rows = await parseRowsFromFile(file);
-
   if (!rows.length) {
     throw new Error("File không có dữ liệu");
   }
@@ -209,12 +197,7 @@ async function readInput(
     throw new Error("File phải có cột MA_DK hoặc cột CCCD + Khóa học");
   }
 
-  return {
-    mode,
-    target,
-    maDkList,
-    mappingList,
-  };
+  return { mode, target, maDkList, mappingList };
 }
 
 async function findStudentsByMaDk(maDkList: string[]) {
@@ -455,6 +438,15 @@ function createWorkbookBuffer(sheetName: string, rows: Record<string, unknown>[]
   });
 }
 
+export async function GET() {
+  return NextResponse.json({
+    ok: true,
+    route: "/api/export-madk",
+    runtime: "nodejs",
+    message: "Export route is ready",
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { mode, target, maDkList, mappingList } = await readInput(req);
@@ -495,7 +487,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("POST /api/export-ma-dk error:", error);
+    console.error("POST /api/export-madk error:", error);
 
     return NextResponse.json(
       {
