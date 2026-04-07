@@ -107,7 +107,7 @@ export default function ExportMaDkPage() {
     <main className="space-y-6">
       <section>
         <h1 className="text-3xl font-bold text-slate-900">Export MA_DK</h1>
-        <p className="mt-2 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-slate-500">
           Xuất dữ liệu theo danh sách MA_DK, mapping hoặc file tải lên.
         </p>
       </section>
@@ -118,7 +118,7 @@ export default function ExportMaDkPage() {
         </h2>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-5 md:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-800">
                 Loại dữ liệu xuất
@@ -126,7 +126,7 @@ export default function ExportMaDkPage() {
               <select
                 value={target}
                 onChange={(e) => setTarget(e.target.value as ExportTarget)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-slate-400"
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none focus:border-teal-600"
               >
                 <option value="students">Thông tin học viên</option>
                 <option value="graduation">Kết quả tốt nghiệp</option>
@@ -141,7 +141,7 @@ export default function ExportMaDkPage() {
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as ExportMode)}
-                className="h-11 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-slate-400"
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 text-sm outline-none focus:border-teal-600"
               >
                 <option value="file">Xuất theo file tải lên</option>
                 <option value="ma_dk">Xuất theo MA_DK</option>
@@ -150,7 +150,7 @@ export default function ExportMaDkPage() {
             </div>
           </div>
 
-          <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
             {helperText}
           </div>
 
@@ -163,7 +163,7 @@ export default function ExportMaDkPage() {
                 type="file"
                 accept={ACCEPTED_FILE_TYPES}
                 onChange={handleFileChange}
-                className="block h-11 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm"
+                className="block h-11 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
               <p className="mt-2 text-sm text-slate-500">
                 {file ? `Đã chọn: ${file.name}` : "Chưa chọn file"}
@@ -181,7 +181,7 @@ export default function ExportMaDkPage() {
                 onChange={(e) => setMaDkText(e.target.value)}
                 rows={10}
                 placeholder={`DK001\nDK002\nDK003`}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-teal-600"
               />
             </div>
           )}
@@ -189,14 +189,14 @@ export default function ExportMaDkPage() {
           {mode === "mapping" && (
             <div>
               <label className="mb-2 block text-sm font-semibold text-slate-800">
-                Danh sách Mapping
+                Mapping CCCD | Khóa học
               </label>
               <textarea
                 value={mappingText}
                 onChange={(e) => setMappingText(e.target.value)}
                 rows={10}
                 placeholder={`079123456789 | K01BSS/25ĐL2\n012345678901 | K02B2/25`}
-                className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-slate-400"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-teal-600"
               />
             </div>
           )}
@@ -205,7 +205,7 @@ export default function ExportMaDkPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-2xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:opacity-60"
+              className="rounded-xl bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {submitting ? "Đang xuất..." : "Xuất dữ liệu"}
             </button>
@@ -214,7 +214,7 @@ export default function ExportMaDkPage() {
               type="button"
               onClick={handleReset}
               disabled={submitting}
-              className="rounded-2xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-300 disabled:opacity-60"
+              className="rounded-xl bg-slate-300 px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Làm trống
             </button>

@@ -440,6 +440,20 @@ function buildSatHachRows(
 function createWorkbookBuffer(sheetName: string, rows: Record<string, unknown>[]) {
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  const range = XLSX.utils.decode_range(worksheet["!ref"] || "A1");
+  for (let row = range.s.r + 1; row <= range.e.r; row++) {
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+      const cell = worksheet[cellAddress];
+      if (!cell) continue;
+
+      if (typeof cell.v === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(cell.v)) {
+        cell.t = "s";
+      }
+    }
+  }
+
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
 
   return XLSX.write(workbook, {
