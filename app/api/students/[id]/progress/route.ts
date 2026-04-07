@@ -27,7 +27,7 @@ export async function GET(
           orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
           take: 1,
         },
-        examResults: {
+        practicalResults: {
           orderBy: [{ ngayThi: "desc" }, { createdAt: "desc" }],
           take: 1,
         },
@@ -43,7 +43,7 @@ export async function GET(
 
     const medical = student.medicalChecks?.[0] ?? null;
     const graduation = student.graduationResults?.[0] ?? null;
-    const exam = student.examResults?.[0] ?? null;
+    const exam = student.practicalResults?.[0] ?? null;
 
     const graduationDone = !!graduation;
     const examDone = !!exam;
