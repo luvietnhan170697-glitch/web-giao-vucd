@@ -4,6 +4,13 @@ import { useMemo, useState } from "react";
 import DashboardShell from "@/components/dashboard-shell";
 import Header from "@/components/header";
 
+type RowResult = {
+  row: number;
+  maDk: string;
+  status: "success" | "error";
+  message: string;
+};
+
 type ImportResult = {
   ok: boolean;
   message: string;
@@ -12,8 +19,32 @@ type ImportResult = {
     success?: number;
     failed?: number;
   };
-  errors?: string[];
+  results?: RowResult[];
 };
+
+function SummaryCard({
+  title,
+  value,
+  background,
+}: {
+  title: string;
+  value: number;
+  background: string;
+}) {
+  return (
+    <div
+      style={{
+        padding: 16,
+        borderRadius: 14,
+        background,
+        border: "1px solid #e2e8f0",
+      }}
+    >
+      <div style={{ fontSize: 13, color: "#475569", marginBottom: 6 }}>{title}</div>
+      <div style={{ fontSize: 28, fontWeight: 800 }}>{value}</div>
+    </div>
+  );
+}
 
 export default function ImportGraduationPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -24,70 +55,20 @@ export default function ImportGraduationPage() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [previewResult, setPreviewResult] = useState<ImportResult | null>(null);
 
-  const canSubmit = useMemo(() => {
-    return !!file && !loading;
-  }, [file, loading]);
+  const canSubmit = useMemo(() => !!file && !loading, [file, loading]);
+  const canPreview = useMemo(() => !!file && !previewLoading, [file, previewLoading]);
 
-  const canPreview = useMemo(() => {
-    return !!file && !previewLoading;
-  }, [file, previewLoading]);
-
-  async function handleImport() {
-    if (!file) {
-      setResult({
-        ok: false,
-        message: "Vui lòng chọn file Excel.",
-      });
-      return;
-    }
+  async function submit(preview = false) {
+    if (!file) return;
 
     try {
-      setLoading(true);
-      setResult(null);
-
-      const formData = new FormData();
-      formData.append("file", file);
-
-      // Không bắt buộc truyền ngày thi.
-      // Chỉ truyền nếu người dùng có chọn tay để làm fallback.
-      if (examDate) {
-        formData.append("examDate", examDate);
+      if (preview) {
+        setPreviewLoading(true);
+        setPreviewResult(null);
+      } else {
+        setLoading(true);
+        setResult(null);
       }
-
-      if (note.trim()) {
-        formData.append("note", note.trim());
-      }
-
-      const res = await fetch("/api/import-graduation", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await res.json();
-      setResult(data);
-    } catch (error) {
-      console.error(error);
-      setResult({
-        ok: false,
-        message: "Import kết quả tốt nghiệp thất bại.",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handlePreview() {
-    if (!file) {
-      setPreviewResult({
-        ok: false,
-        message: "Vui lòng chọn file Excel để kiểm tra trước.",
-      });
-      return;
-    }
-
-    try {
-      setPreviewLoading(true);
-      setPreviewResult(null);
 
       const formData = new FormData();
       formData.append("file", file);
@@ -100,23 +81,45 @@ export default function ImportGraduationPage() {
         formData.append("note", note.trim());
       }
 
-      const res = await fetch("/api/import-graduation?preview=1", {
-        method: "POST",
-        body: formData,
-      });
+      const res = await fetch(
+        preview ? "/api/import-graduation?preview=1" : "/api/import-graduation",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
       const data = await res.json();
-      setPreviewResult(data);
+
+      if (preview) {
+        setPreviewResult(data);
+      } else {
+        setResult(data);
+      }
     } catch (error) {
       console.error(error);
-      setPreviewResult({
+      const fallback = {
         ok: false,
-        message: "Kiểm tra trước thất bại.",
-      });
+        message: preview ? "Kiểm tra trước thất bại." : "Import thất bại.",
+      };
+
+      if (preview) {
+        setPreviewResult(fallback);
+      } else {
+        setResult(fallback);
+      }
     } finally {
-      setPreviewLoading(false);
+      if (preview) {
+        setPreviewLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
+
+  const activeResult = result || previewResult;
+  const successRows = activeResult?.results?.filter((x) => x.status === "success") ?? [];
+  const errorRows = activeResult?.results?.filter((x) => x.status === "error") ?? [];
 
   return (
     <DashboardShell>
@@ -125,20 +128,14 @@ export default function ImportGraduationPage() {
         subtitle="Cập nhật kết quả tốt nghiệp theo từng nội dung thi."
       />
 
-      <div
-        className="card"
-        style={{
-          padding: 20,
-          borderRadius: 16,
-        }}
-      >
-        <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 8 }}>
+      <div className="card" style={{ padding: 20, borderRadius: 16 }}>
+        <div style={{ fontSize: 22, fontWeight: 800, marginBottom: 8 }}>
           Tải file kết quả tốt nghiệp
         </div>
 
         <div style={{ color: "#64748b", marginBottom: 20 }}>
-          Ngày thi sẽ ưu tiên lấy từ cột <b>ngay_thi_tot_nghiep</b> trong file Excel.
-          Ô ngày thi bên dưới chỉ là tùy chọn dự phòng nếu file không có ngày.
+          Hệ thống ưu tiên lấy ngày thi từ cột <b>ngay_thi_tot_nghiep</b> trong file.
+          Ô ngày thi chỉ là phương án dự phòng.
         </div>
 
         <div
@@ -150,44 +147,31 @@ export default function ImportGraduationPage() {
           }}
         >
           <div>
-            <label
-              htmlFor="graduation-file"
-              style={{ display: "block", fontWeight: 700, marginBottom: 8 }}
-            >
+            <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>
               File dữ liệu
             </label>
             <input
-              id="graduation-file"
               type="file"
               accept=".xlsx,.xls,.csv"
               onChange={(e) => {
-                const selected = e.target.files?.[0] || null;
-                setFile(selected);
+                setFile(e.target.files?.[0] || null);
                 setResult(null);
                 setPreviewResult(null);
-              }}
-              style={{
-                width: "100%",
-                height: 40,
               }}
             />
           </div>
 
           <div>
-            <label
-              htmlFor="exam-date"
-              style={{ display: "block", fontWeight: 700, marginBottom: 8 }}
-            >
-              Ngày thi (tùy chọn)
+            <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>
+              Ngày thi dự phòng
             </label>
             <input
-              id="exam-date"
               type="date"
               value={examDate}
               onChange={(e) => setExamDate(e.target.value)}
               style={{
                 width: "100%",
-                height: 40,
+                height: 42,
                 borderRadius: 10,
                 border: "1px solid #cbd5e1",
                 padding: "0 12px",
@@ -198,18 +182,14 @@ export default function ImportGraduationPage() {
         </div>
 
         <div style={{ marginBottom: 16 }}>
-          <label
-            htmlFor="note"
-            style={{ display: "block", fontWeight: 700, marginBottom: 8 }}
-          >
+          <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>
             Ghi chú
           </label>
           <textarea
-            id="note"
             value={note}
             onChange={(e) => setNote(e.target.value)}
-            placeholder="Hệ thống hỗ trợ cập nhật đơn kết quả theo từng lần thi..."
             rows={4}
+            placeholder="Ví dụ: Cập nhật theo danh sách thi lại đợt 2..."
             style={{
               width: "100%",
               borderRadius: 12,
@@ -220,10 +200,10 @@ export default function ImportGraduationPage() {
           />
         </div>
 
-        <div style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <button
             type="button"
-            onClick={handleImport}
+            onClick={() => submit(false)}
             disabled={!canSubmit}
             style={{
               height: 42,
@@ -241,7 +221,7 @@ export default function ImportGraduationPage() {
 
           <button
             type="button"
-            onClick={handlePreview}
+            onClick={() => submit(true)}
             disabled={!canPreview}
             style={{
               height: 42,
@@ -265,10 +245,10 @@ export default function ImportGraduationPage() {
             border: "1px solid #e2e8f0",
             background: "#f8fafc",
             lineHeight: 1.7,
-            marginTop: 12,
+            marginBottom: 20,
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>File Excel hỗ trợ các cột:</div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>Cột Excel hỗ trợ:</div>
           <div>ma_dk</div>
           <div>ngay_thi_tot_nghiep</div>
           <div>ly_thuyet</div>
@@ -277,68 +257,171 @@ export default function ImportGraduationPage() {
           <div>duong</div>
         </div>
 
-        {previewResult && (
-          <div
-            style={{
-              marginTop: 20,
-              padding: 16,
-              borderRadius: 12,
-              border: previewResult.ok ? "1px solid #86efac" : "1px solid #fca5a5",
-              background: previewResult.ok ? "#f0fdf4" : "#fef2f2",
-            }}
-          >
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>Kết quả kiểm tra trước</div>
-            <div style={{ marginBottom: 8 }}>{previewResult.message}</div>
+        {activeResult && (
+          <>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 12 }}>
+              {result ? "Kết quả import" : "Kết quả kiểm tra"}
+            </div>
 
-            {previewResult.summary && (
-              <div style={{ lineHeight: 1.7 }}>
-                <div>Tổng dòng: {previewResult.summary.total ?? 0}</div>
-                <div>Hợp lệ: {previewResult.summary.success ?? 0}</div>
-                <div>Lỗi: {previewResult.summary.failed ?? 0}</div>
+            <div
+              style={{
+                padding: 14,
+                borderRadius: 12,
+                marginBottom: 16,
+                border: activeResult.ok ? "1px solid #86efac" : "1px solid #fca5a5",
+                background: activeResult.ok ? "#f0fdf4" : "#fef2f2",
+                fontWeight: 600,
+              }}
+            >
+              {activeResult.message}
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: 12,
+                marginBottom: 20,
+              }}
+            >
+              <SummaryCard
+                title="Tổng số dòng"
+                value={activeResult.summary?.total ?? 0}
+                background="#f8fafc"
+              />
+              <SummaryCard
+                title="Thành công"
+                value={activeResult.summary?.success ?? 0}
+                background="#f0fdf4"
+              />
+              <SummaryCard
+                title="Lỗi"
+                value={activeResult.summary?.failed ?? 0}
+                background="#fef2f2"
+              />
+            </div>
+
+            {!!errorRows.length && (
+              <div style={{ marginBottom: 20 }}>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
+                  Danh sách lỗi
+                </div>
+
+                <div
+                  style={{
+                    overflowX: "auto",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    background: "#fff",
+                  }}
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        <th style={thStyle}>Dòng</th>
+                        <th style={thStyle}>MA_DK</th>
+                        <th style={thStyle}>Trạng thái</th>
+                        <th style={thStyle}>Lý do</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {errorRows.map((item, index) => (
+                        <tr key={`${item.row}-${index}`}>
+                          <td style={tdStyle}>{item.row}</td>
+                          <td style={tdStyle}>{item.maDk || "-"}</td>
+                          <td style={tdStyle}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "4px 10px",
+                                borderRadius: 999,
+                                background: "#fee2e2",
+                                color: "#991b1b",
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              Lỗi
+                            </span>
+                          </td>
+                          <td style={tdStyle}>{item.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
-            {!!previewResult.errors?.length && (
-              <ul style={{ marginTop: 10, paddingLeft: 18 }}>
-                {previewResult.errors.map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
+            {!!successRows.length && (
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
+                  Danh sách thành công
+                </div>
 
-        {result && (
-          <div
-            style={{
-              marginTop: 20,
-              padding: 16,
-              borderRadius: 12,
-              border: result.ok ? "1px solid #86efac" : "1px solid #fca5a5",
-              background: result.ok ? "#f0fdf4" : "#fef2f2",
-            }}
-          >
-            <div style={{ fontWeight: 800, marginBottom: 10 }}>Kết quả import</div>
-            <div style={{ marginBottom: 8 }}>{result.message}</div>
-
-            {result.summary && (
-              <div style={{ lineHeight: 1.7 }}>
-                <div>Tổng dòng: {result.summary.total ?? 0}</div>
-                <div>Thành công: {result.summary.success ?? 0}</div>
-                <div>Thất bại: {result.summary.failed ?? 0}</div>
+                <div
+                  style={{
+                    overflowX: "auto",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 12,
+                    background: "#fff",
+                  }}
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead>
+                      <tr style={{ background: "#f8fafc" }}>
+                        <th style={thStyle}>Dòng</th>
+                        <th style={thStyle}>MA_DK</th>
+                        <th style={thStyle}>Trạng thái</th>
+                        <th style={thStyle}>Kết quả</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {successRows.map((item, index) => (
+                        <tr key={`${item.row}-${index}`}>
+                          <td style={tdStyle}>{item.row}</td>
+                          <td style={tdStyle}>{item.maDk || "-"}</td>
+                          <td style={tdStyle}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "4px 10px",
+                                borderRadius: 999,
+                                background: "#dcfce7",
+                                color: "#166534",
+                                fontWeight: 700,
+                                fontSize: 12,
+                              }}
+                            >
+                              Thành công
+                            </span>
+                          </td>
+                          <td style={tdStyle}>{item.message}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
-
-            {!!result.errors?.length && (
-              <ul style={{ marginTop: 10, paddingLeft: 18 }}>
-                {result.errors.map((err, idx) => (
-                  <li key={idx}>{err}</li>
-                ))}
-              </ul>
-            )}
-          </div>
+          </>
         )}
       </div>
     </DashboardShell>
   );
 }
+
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "12px 14px",
+  borderBottom: "1px solid #e2e8f0",
+  fontSize: 13,
+  color: "#334155",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderBottom: "1px solid #f1f5f9",
+  fontSize: 14,
+  verticalAlign: "top",
+};
