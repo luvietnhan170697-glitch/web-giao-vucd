@@ -30,10 +30,10 @@ export default function ImportExcelPage() {
       return;
     }
 
-    setLoading(true);
-    setResult(null);
-
     try {
+      setLoading(true);
+      setResult(null);
+
       const formData = new FormData();
       formData.append("file", file);
 
@@ -48,7 +48,7 @@ export default function ImportExcelPage() {
       console.error(error);
       setResult({
         ok: false,
-        message: "Có lỗi xảy ra khi upload file.",
+        message: "Có lỗi xảy ra khi upload file Excel.",
       });
     } finally {
       setLoading(false);
@@ -62,53 +62,72 @@ export default function ImportExcelPage() {
         subtitle="Nhập dữ liệu học viên từ file Excel (.xlsx, .xls)"
       />
 
-      <div className="card" style={{ padding: 20 }}>
-        <form onSubmit={handleSubmit} className="space-y-4">
+      <div
+        className="card"
+        style={{
+          padding: 20,
+          borderRadius: 16,
+        }}
+      >
+        <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: 16 }}>
             <label
               htmlFor="excel-file"
-              style={{ display: "block", fontWeight: 600, marginBottom: 8 }}
+              style={{
+                display: "block",
+                fontSize: 14,
+                fontWeight: 700,
+                marginBottom: 8,
+              }}
             >
               Chọn file Excel
             </label>
+
             <input
               id="excel-file"
               type="file"
               accept=".xlsx,.xls"
               onChange={(e) => {
-                const selected = e.target.files?.[0] || null;
-                setFile(selected);
+                const selectedFile = e.target.files?.[0] || null;
+                setFile(selectedFile);
               }}
             />
           </div>
 
           <div
             style={{
-              background: "#f8fafc",
-              border: "1px solid #e2e8f0",
-              borderRadius: 12,
               padding: 16,
+              borderRadius: 12,
+              border: "1px solid #e2e8f0",
+              background: "#f8fafc",
               marginBottom: 16,
+              lineHeight: 1.8,
             }}
           >
             <div style={{ fontWeight: 700, marginBottom: 8 }}>
-              Cột bắt buộc nên có:
+              Cột nên có trong file:
             </div>
-            <div>
-              MA_DK | Họ và tên | Ngày sinh | CCCD / Số CMT | Khóa học | Tên
-              khóa học
-            </div>
+            <div>MA_DK</div>
+            <div>Họ và tên</div>
+            <div>Ngày sinh</div>
+            <div>CCCD / Số CMT</div>
+            <div>Khóa học</div>
+            <div>Tên khóa học</div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
             style={{
-              padding: "10px 16px",
+              height: 42,
+              padding: "0 16px",
               borderRadius: 10,
               border: "none",
+              background: "#0f172a",
+              color: "#fff",
+              fontWeight: 700,
               cursor: loading ? "not-allowed" : "pointer",
-              fontWeight: 600,
+              opacity: loading ? 0.7 : 1,
             }}
           >
             {loading ? "Đang import..." : "Import Excel"}
@@ -121,11 +140,13 @@ export default function ImportExcelPage() {
               marginTop: 20,
               padding: 16,
               borderRadius: 12,
-              border: `1px solid ${result.ok ? "#86efac" : "#fca5a5"}`,
+              border: result.ok
+                ? "1px solid #86efac"
+                : "1px solid #fca5a5",
               background: result.ok ? "#f0fdf4" : "#fef2f2",
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+            <div style={{ fontWeight: 700, marginBottom: 10 }}>
               {result.message}
             </div>
 
@@ -140,12 +161,14 @@ export default function ImportExcelPage() {
 
             {!!result.skipped?.length && (
               <div style={{ marginTop: 12 }}>
-                <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                <div style={{ fontWeight: 700, marginBottom: 8 }}>
                   Chi tiết dòng lỗi:
                 </div>
-                <ul style={{ paddingLeft: 18, margin: 0 }}>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
                   {result.skipped.map((item, index) => (
-                    <li key={index}>{item}</li>
+                    <li key={index} style={{ marginBottom: 4 }}>
+                      {item}
+                    </li>
                   ))}
                 </ul>
               </div>

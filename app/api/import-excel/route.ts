@@ -4,35 +4,35 @@ import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
-type RawRow = {
-  [key: string]: unknown;
-};
+type RawRow = Record<string, unknown>;
 
 function normalizeHeader(value: string) {
   return value
     .trim()
     .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/_/g, " ");
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function getCell(row: RawRow, candidates: string[]) {
-  const entries = Object.entries(row);
-
-  for (const [key, value] of entries) {
+  for (const [key, value] of Object.entries(row)) {
     const normalizedKey = normalizeHeader(String(key));
     if (candidates.includes(normalizedKey)) {
       return value;
     }
   }
-
   return undefined;
+}
+
+function cleanString(value: unknown) {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
 }
 
 function excelDateToDate(value: unknown): Date | null {
   if (value === null || value === undefined || value === "") return null;
 
-  if (value instanceof Date && !isNaN(value.getTime())) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value;
   }
 
@@ -50,7 +50,7 @@ function excelDateToDate(value: unknown): Date | null {
   if (vnMatch) {
     const [, d, m, y] = vnMatch;
     const date = new Date(Number(y), Number(m) - 1, Number(d));
-    return isNaN(date.getTime()) ? null : date;
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   // yyyy-mm-dd
@@ -58,16 +58,11 @@ function excelDateToDate(value: unknown): Date | null {
   if (isoMatch) {
     const [, y, m, d] = isoMatch;
     const date = new Date(Number(y), Number(m) - 1, Number(d));
-    return isNaN(date.getTime()) ? null : date;
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
   const date = new Date(raw);
-  return isNaN(date.getTime()) ? null : date;
-}
-
-function cleanString(value: unknown) {
-  if (value === null || value === undefined) return "";
-  return String(value).trim();
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 export async function POST(req: Request) {
@@ -83,6 +78,7 @@ export async function POST(req: Request) {
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
+
     const workbook = XLSX.read(buffer, {
       type: "buffer",
       cellDates: false,
@@ -104,7 +100,7 @@ export async function POST(req: Request) {
 
     if (!rows.length) {
       return NextResponse.json(
-        { ok: false, message: "Không có dòng dữ liệu nào trong file." },
+        { ok: false, message: "Không có dữ liệu trong file Excel." },
         { status: 400 }
       );
     }
@@ -117,12 +113,15 @@ export async function POST(req: Request) {
       const row = rows[i];
 
       const maDk = cleanString(
-        getCell(row, ["ma dk", "ma_dk", "mã đăng ký", "mã dk"])
+        getCell(row, ["ma dk", "ma_dk", "mã dk", "mã đăng ký"])
       );
+
       const hoTen = cleanString(
-        getCell(row, ["họ và tên", "ho va ten", "ho ten", "họ tên"])
+        getCell(row, ["họ và tên", "ho va ten", "họ tên", "ho ten"])
       );
+
       const ngaySinhRaw = getCell(row, ["ngày sinh", "ngay sinh", "dob"]);
+
       const cccd = cleanString(
         getCell(row, [
           "cccd / số cmt",
@@ -131,19 +130,15 @@ export async function POST(req: Request) {
           "số cmt",
           "so cmt",
           "so cccd",
-          "cccd số cmt",
         ])
       );
+
       const maKhoaHoc = cleanString(
         getCell(row, ["khóa học", "khoa hoc", "ma khoa hoc", "mã khóa học"])
       );
+
       const tenKhoaHoc = cleanString(
-        getCell(row, [
-          "tên khóa học",
-          "ten khoa hoc",
-          "tên lớp",
-          "ten lop",
-        ])
+        getCell(row, ["tên khóa học", "ten khoa hoc", "tên lớp", "ten lop"])
       );
 
       if (!maDk) {
@@ -180,25 +175,28 @@ export async function POST(req: Request) {
         await prisma.student.upsert({
           where: { maDk },
           update: {
-            hoTen: hoTen || undefined,
+            hoVaTen: hoTen || undefined,
             ngaySinh: ngaySinh || undefined,
-            cccd: cccd || undefined,
+            soCmt: cccd || undefined,
             courseId,
           },
           create: {
             maDk,
-            hoTen: hoTen || null,
+            hoVaTen: hoTen || null,
             ngaySinh,
-            cccd: cccd || null,
+            soCmt: cccd || null,
             courseId,
           },
         });
 
-        if (existed) updatedCount++;
-        else createdCount++;
+        if (existed) {
+          updatedCount++;
+        } else {
+          createdCount++;
+        }
       } catch (error) {
-        skipped.push(`Dòng ${i + 2}: lỗi lưu dữ liệu`);
-        console.error(`Import Excel row ${i + 2} failed:`, error);
+        console.error(`Import Excel lỗi tại dòng ${i + 2}:`, error);
+        skipped.push(`Dòng ${i + 2}: lỗi khi lưu dữ liệu`);
       }
     }
 
