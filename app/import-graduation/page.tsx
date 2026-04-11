@@ -11,16 +11,35 @@ type RowResult = {
   message: string;
 };
 
-type ImportResult = {
+type Summary = {
+  total: number;
+  processed: number;
+  success: number;
+  failed: number;
+  progress: number;
+};
+
+type StreamDone = {
+  type: "done";
   ok: boolean;
   message: string;
-  summary?: {
-    total?: number;
-    success?: number;
-    failed?: number;
-  };
-  results?: RowResult[];
+  summary: Summary;
+  results: RowResult[];
 };
+
+type StreamProgress = {
+  type: "progress";
+  rowResult: RowResult;
+  summary: Summary;
+};
+
+type StreamStart = {
+  type: "start";
+  message: string;
+  summary: Summary;
+};
+
+type StreamEvent = StreamDone | StreamProgress | StreamStart;
 
 function SummaryCard({
   title,
@@ -46,30 +65,58 @@ function SummaryCard({
   );
 }
 
+const thStyle: React.CSSProperties = {
+  textAlign: "left",
+  padding: "12px 14px",
+  borderBottom: "1px solid #e2e8f0",
+  fontSize: 13,
+  color: "#334155",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  borderBottom: "1px solid #f1f5f9",
+  fontSize: 14,
+  verticalAlign: "top",
+};
+
 export default function ImportGraduationPage() {
   const [file, setFile] = useState<File | null>(null);
   const [examDate, setExamDate] = useState("");
   const [note, setNote] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [previewLoading, setPreviewLoading] = useState(false);
-  const [result, setResult] = useState<ImportResult | null>(null);
-  const [previewResult, setPreviewResult] = useState<ImportResult | null>(null);
 
-  const canSubmit = useMemo(() => !!file && !loading, [file, loading]);
-  const canPreview = useMemo(() => !!file && !previewLoading, [file, previewLoading]);
+  const [running, setRunning] = useState(false);
+  const [mode, setMode] = useState<"preview" | "import" | null>(null);
+  const [message, setMessage] = useState("");
+  const [summary, setSummary] = useState<Summary>({
+    total: 0,
+    processed: 0,
+    success: 0,
+    failed: 0,
+    progress: 0,
+  });
+  const [results, setResults] = useState<RowResult[]>([]);
+  const [doneOk, setDoneOk] = useState<boolean | null>(null);
 
-  async function submit(preview = false) {
+  const canRun = useMemo(() => !!file && !running, [file, running]);
+
+  async function run(preview: boolean) {
     if (!file) return;
 
-    try {
-      if (preview) {
-        setPreviewLoading(true);
-        setPreviewResult(null);
-      } else {
-        setLoading(true);
-        setResult(null);
-      }
+    setRunning(true);
+    setMode(preview ? "preview" : "import");
+    setMessage(preview ? "Đang kiểm tra file..." : "Đang import dữ liệu...");
+    setSummary({
+      total: 0,
+      processed: 0,
+      success: 0,
+      failed: 0,
+      progress: 0,
+    });
+    setResults([]);
+    setDoneOk(null);
 
+    try {
       const formData = new FormData();
       formData.append("file", file);
 
@@ -89,37 +136,61 @@ export default function ImportGraduationPage() {
         }
       );
 
-      const data = await res.json();
+      if (!res.body) {
+        throw new Error("Không đọc được dữ liệu stream từ server.");
+      }
 
-      if (preview) {
-        setPreviewResult(data);
-      } else {
-        setResult(data);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split("\n\n");
+        buffer = chunks.pop() || "";
+
+        for (const chunk of chunks) {
+          const line = chunk
+            .split("\n")
+            .find((item) => item.startsWith("data: "));
+          if (!line) continue;
+
+          const payload = JSON.parse(line.slice(6)) as StreamEvent;
+
+          if (payload.type === "start") {
+            setMessage(payload.message);
+            setSummary(payload.summary);
+          }
+
+          if (payload.type === "progress") {
+            setSummary(payload.summary);
+            setResults((prev) => [...prev, payload.rowResult]);
+            setMessage(
+              `Đang xử lý ${payload.summary.processed}/${payload.summary.total} dòng...`
+            );
+          }
+
+          if (payload.type === "done") {
+            setSummary(payload.summary);
+            setResults(payload.results);
+            setMessage(payload.message);
+            setDoneOk(payload.ok);
+          }
+        }
       }
     } catch (error) {
-      console.error(error);
-      const fallback = {
-        ok: false,
-        message: preview ? "Kiểm tra trước thất bại." : "Import thất bại.",
-      };
-
-      if (preview) {
-        setPreviewResult(fallback);
-      } else {
-        setResult(fallback);
-      }
+      setDoneOk(false);
+      setMessage(error instanceof Error ? error.message : "Có lỗi xảy ra khi import.");
     } finally {
-      if (preview) {
-        setPreviewLoading(false);
-      } else {
-        setLoading(false);
-      }
+      setRunning(false);
     }
   }
 
-  const activeResult = result || previewResult;
-  const successRows = activeResult?.results?.filter((x) => x.status === "success") ?? [];
-  const errorRows = activeResult?.results?.filter((x) => x.status === "error") ?? [];
+  const successRows = results.filter((x) => x.status === "success");
+  const errorRows = results.filter((x) => x.status === "error");
 
   return (
     <DashboardShell>
@@ -135,7 +206,7 @@ export default function ImportGraduationPage() {
 
         <div style={{ color: "#64748b", marginBottom: 20 }}>
           Hệ thống ưu tiên lấy ngày thi từ cột <b>ngay_thi_tot_nghiep</b> trong file.
-          Ô ngày thi chỉ là phương án dự phòng.
+          Ô ngày thi chỉ là tùy chọn dự phòng nếu file không có ngày.
         </div>
 
         <div
@@ -155,15 +226,15 @@ export default function ImportGraduationPage() {
               accept=".xlsx,.xls,.csv"
               onChange={(e) => {
                 setFile(e.target.files?.[0] || null);
-                setResult(null);
-                setPreviewResult(null);
+                setResults([]);
+                setDoneOk(null);
               }}
             />
           </div>
 
           <div>
             <label style={{ display: "block", fontWeight: 700, marginBottom: 8 }}>
-              Ngày thi dự phòng
+              Ngày thi (tùy chọn)
             </label>
             <input
               type="date"
@@ -189,7 +260,7 @@ export default function ImportGraduationPage() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
             rows={4}
-            placeholder="Ví dụ: Cập nhật theo danh sách thi lại đợt 2..."
+            placeholder="Ví dụ: Cập nhật theo danh sách thi lại..."
             style={{
               width: "100%",
               borderRadius: 12,
@@ -203,26 +274,26 @@ export default function ImportGraduationPage() {
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <button
             type="button"
-            onClick={() => submit(false)}
-            disabled={!canSubmit}
+            onClick={() => run(false)}
+            disabled={!canRun}
             style={{
               height: 42,
               padding: "0 16px",
               borderRadius: 10,
               border: "none",
-              background: canSubmit ? "#0f766e" : "#94a3b8",
+              background: canRun ? "#0f766e" : "#94a3b8",
               color: "#fff",
               fontWeight: 700,
-              cursor: canSubmit ? "pointer" : "not-allowed",
+              cursor: canRun ? "pointer" : "not-allowed",
             }}
           >
-            {loading ? "Đang import..." : "Import kết quả"}
+            {running && mode === "import" ? "Đang import..." : "Import kết quả"}
           </button>
 
           <button
             type="button"
-            onClick={() => submit(true)}
-            disabled={!canPreview}
+            onClick={() => run(true)}
+            disabled={!canRun}
             style={{
               height: 42,
               padding: "0 16px",
@@ -231,11 +302,57 @@ export default function ImportGraduationPage() {
               background: "#e2e8f0",
               color: "#0f172a",
               fontWeight: 700,
-              cursor: canPreview ? "pointer" : "not-allowed",
+              cursor: canRun ? "pointer" : "not-allowed",
             }}
           >
-            {previewLoading ? "Đang kiểm tra..." : "Kiểm tra trước"}
+            {running && mode === "preview" ? "Đang kiểm tra..." : "Kiểm tra trước"}
           </button>
+        </div>
+
+        <div
+          style={{
+            padding: 16,
+            borderRadius: 12,
+            border: "1px solid #e2e8f0",
+            background: "#f8fafc",
+            marginBottom: 16,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 8,
+              fontWeight: 700,
+            }}
+          >
+            <span>{message || "Chưa bắt đầu"}</span>
+            <span>{summary.progress}%</span>
+          </div>
+
+          <div
+            style={{
+              width: "100%",
+              height: 12,
+              background: "#e2e8f0",
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${summary.progress}%`,
+                height: "100%",
+                background: "#0f766e",
+                transition: "width 0.2s ease",
+              }}
+            />
+          </div>
+
+          <div style={{ marginTop: 10, color: "#475569", fontSize: 14 }}>
+            Đã xử lý: {summary.processed}/{summary.total} dòng
+          </div>
         </div>
 
         <div
@@ -248,7 +365,7 @@ export default function ImportGraduationPage() {
             marginBottom: 20,
           }}
         >
-          <div style={{ fontWeight: 700, marginBottom: 8 }}>Cột Excel hỗ trợ:</div>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>File Excel hỗ trợ các cột:</div>
           <div>ma_dk</div>
           <div>ngay_thi_tot_nghiep</div>
           <div>ly_thuyet</div>
@@ -257,23 +374,25 @@ export default function ImportGraduationPage() {
           <div>duong</div>
         </div>
 
-        {activeResult && (
+        {(summary.total > 0 || results.length > 0) && (
           <>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 12 }}>
-              {result ? "Kết quả import" : "Kết quả kiểm tra"}
-            </div>
-
             <div
               style={{
                 padding: 14,
                 borderRadius: 12,
                 marginBottom: 16,
-                border: activeResult.ok ? "1px solid #86efac" : "1px solid #fca5a5",
-                background: activeResult.ok ? "#f0fdf4" : "#fef2f2",
+                border:
+                  doneOk === null
+                    ? "1px solid #cbd5e1"
+                    : doneOk
+                    ? "1px solid #86efac"
+                    : "1px solid #fca5a5",
+                background:
+                  doneOk === null ? "#f8fafc" : doneOk ? "#f0fdf4" : "#fef2f2",
                 fontWeight: 600,
               }}
             >
-              {activeResult.message}
+              {message}
             </div>
 
             <div
@@ -284,21 +403,9 @@ export default function ImportGraduationPage() {
                 marginBottom: 20,
               }}
             >
-              <SummaryCard
-                title="Tổng số dòng"
-                value={activeResult.summary?.total ?? 0}
-                background="#f8fafc"
-              />
-              <SummaryCard
-                title="Thành công"
-                value={activeResult.summary?.success ?? 0}
-                background="#f0fdf4"
-              />
-              <SummaryCard
-                title="Lỗi"
-                value={activeResult.summary?.failed ?? 0}
-                background="#fef2f2"
-              />
+              <SummaryCard title="Tổng số dòng" value={summary.total} background="#f8fafc" />
+              <SummaryCard title="Thành công" value={summary.success} background="#f0fdf4" />
+              <SummaryCard title="Lỗi" value={summary.failed} background="#fef2f2" />
             </div>
 
             {!!errorRows.length && (
@@ -306,7 +413,6 @@ export default function ImportGraduationPage() {
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
                   Danh sách lỗi
                 </div>
-
                 <div
                   style={{
                     overflowX: "auto",
@@ -329,21 +435,7 @@ export default function ImportGraduationPage() {
                         <tr key={`${item.row}-${index}`}>
                           <td style={tdStyle}>{item.row}</td>
                           <td style={tdStyle}>{item.maDk || "-"}</td>
-                          <td style={tdStyle}>
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "4px 10px",
-                                borderRadius: 999,
-                                background: "#fee2e2",
-                                color: "#991b1b",
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              Lỗi
-                            </span>
-                          </td>
+                          <td style={tdStyle}>Lỗi</td>
                           <td style={tdStyle}>{item.message}</td>
                         </tr>
                       ))}
@@ -358,7 +450,6 @@ export default function ImportGraduationPage() {
                 <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
                   Danh sách thành công
                 </div>
-
                 <div
                   style={{
                     overflowX: "auto",
@@ -381,21 +472,7 @@ export default function ImportGraduationPage() {
                         <tr key={`${item.row}-${index}`}>
                           <td style={tdStyle}>{item.row}</td>
                           <td style={tdStyle}>{item.maDk || "-"}</td>
-                          <td style={tdStyle}>
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "4px 10px",
-                                borderRadius: 999,
-                                background: "#dcfce7",
-                                color: "#166534",
-                                fontWeight: 700,
-                                fontSize: 12,
-                              }}
-                            >
-                              Thành công
-                            </span>
-                          </td>
+                          <td style={tdStyle}>Thành công</td>
                           <td style={tdStyle}>{item.message}</td>
                         </tr>
                       ))}
@@ -410,18 +487,3 @@ export default function ImportGraduationPage() {
     </DashboardShell>
   );
 }
-
-const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "12px 14px",
-  borderBottom: "1px solid #e2e8f0",
-  fontSize: 13,
-  color: "#334155",
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: "12px 14px",
-  borderBottom: "1px solid #f1f5f9",
-  fontSize: 14,
-  verticalAlign: "top",
-};

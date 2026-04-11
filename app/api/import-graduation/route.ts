@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import * as XLSX from "xlsx";
 import { prisma } from "@/lib/prisma";
 
@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 type RawRow = Record<string, unknown>;
 
-type ImportRowResult = {
+type StreamRowResult = {
   row: number;
   maDk: string;
   status: "success" | "error";
@@ -14,11 +14,7 @@ type ImportRowResult = {
 };
 
 function normalizeHeader(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\s+/g, " ");
+  return value.trim().toLowerCase().replace(/_/g, " ").replace(/\s+/g, " ");
 }
 
 function getCell(row: RawRow, candidates: string[]) {
@@ -41,7 +37,9 @@ function normalizeResult(value: unknown): string | null {
   if (!raw) return null;
 
   if (["đạt", "dat", "pass", "passed"].includes(raw)) return "DAT";
-  if (["rớt", "rot", "trượt", "truot", "fail", "failed", "không đạt", "khong dat"].includes(raw)) {
+  if (
+    ["rớt", "rot", "trượt", "truot", "fail", "failed", "không đạt", "khong dat"].includes(raw)
+  ) {
     return "ROT";
   }
   if (["vắng", "vang", "absent"].includes(raw)) return "VANG";
@@ -113,9 +111,16 @@ function calcKetQua(
   return { ketQua: null as string | null, noiDungRot: null as string | null };
 }
 
+function sseLine(data: unknown) {
+  return `data: ${JSON.stringify(data)}\n\n`;
+}
+
 export async function POST(req: NextRequest) {
+  const encoder = new TextEncoder();
+
   try {
-    const preview = req.nextUrl.searchParams.get("preview") === "1";
+    const url = new URL(req.url);
+    const preview = url.searchParams.get("preview") === "1";
 
     const formData = await req.formData();
     const file = formData.get("file");
@@ -123,9 +128,24 @@ export async function POST(req: NextRequest) {
     const note = cleanString(formData.get("note"));
 
     if (!(file instanceof File)) {
-      return NextResponse.json(
-        { ok: false, message: "Chưa chọn file Excel." },
-        { status: 400 }
+      return new Response(
+        encoder.encode(
+          sseLine({
+            type: "done",
+            ok: false,
+            message: "Chưa chọn file Excel.",
+            summary: { total: 0, success: 0, failed: 1, progress: 100 },
+            results: [],
+          })
+        ),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+          },
+        }
       );
     }
 
@@ -134,9 +154,24 @@ export async function POST(req: NextRequest) {
 
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
-      return NextResponse.json(
-        { ok: false, message: "File Excel không có sheet dữ liệu." },
-        { status: 400 }
+      return new Response(
+        encoder.encode(
+          sseLine({
+            type: "done",
+            ok: false,
+            message: "File Excel không có sheet dữ liệu.",
+            summary: { total: 0, success: 0, failed: 1, progress: 100 },
+            results: [],
+          })
+        ),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+          },
+        }
       );
     }
 
@@ -147,164 +182,243 @@ export async function POST(req: NextRequest) {
     });
 
     if (!rows.length) {
-      return NextResponse.json(
-        { ok: false, message: "Không có dữ liệu trong file Excel." },
-        { status: 400 }
+      return new Response(
+        encoder.encode(
+          sseLine({
+            type: "done",
+            ok: false,
+            message: "Không có dữ liệu trong file Excel.",
+            summary: { total: 0, success: 0, failed: 1, progress: 100 },
+            results: [],
+          })
+        ),
+        {
+          status: 400,
+          headers: {
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+          },
+        }
       );
     }
 
-    let success = 0;
-    let failed = 0;
-    const results: ImportRowResult[] = [];
+    const stream = new ReadableStream({
+      async start(controller) {
+        const results: StreamRowResult[] = [];
+        let success = 0;
+        let failed = 0;
+        const total = rows.length;
 
-    for (let i = 0; i < rows.length; i++) {
-      const rowNumber = i + 2;
-      const row = rows[i];
-
-      try {
-        const maDk = cleanString(
-          getCell(row, ["ma dk", "ma_dk", "mã dk", "mã đăng ký"])
+        controller.enqueue(
+          encoder.encode(
+            sseLine({
+              type: "start",
+              message: preview ? "Bắt đầu kiểm tra file tốt nghiệp..." : "Bắt đầu import tốt nghiệp...",
+              summary: {
+                total,
+                processed: 0,
+                success: 0,
+                failed: 0,
+                progress: 0,
+              },
+            })
+          )
         );
 
-        const ngayThiRaw = getCell(row, [
-          "ngay thi tot nghiep",
-          "ngay_thi_tot_nghiep",
-          "ngày thi tốt nghiệp",
-          "ngay thi",
-        ]);
+        for (let i = 0; i < rows.length; i++) {
+          const rowNumber = i + 2;
+          const row = rows[i];
 
-        const lyThuyet = normalizeResult(
-          getCell(row, ["ly thuyet", "ly_thuyet", "lý thuyết"])
-        );
+          try {
+            const maDk = cleanString(
+              getCell(row, ["ma dk", "ma_dk", "mã dk", "mã đăng ký"])
+            );
 
-        const moPhong = normalizeResult(
-          getCell(row, ["mo phong", "mo_phong", "mô phỏng"])
-        );
+            const ngayThiRaw = getCell(row, [
+              "ngay thi tot nghiep",
+              "ngay_thi_tot_nghiep",
+              "ngày thi tốt nghiệp",
+              "ngay thi",
+            ]);
 
-        const hinh = normalizeResult(
-          getCell(row, ["hinh", "hình"])
-        );
+            const lyThuyet = normalizeResult(
+              getCell(row, ["ly thuyet", "ly_thuyet", "lý thuyết"])
+            );
 
-        const duong = normalizeResult(
-          getCell(row, ["duong", "đường"])
-        );
+            const moPhong = normalizeResult(
+              getCell(row, ["mo phong", "mo_phong", "mô phỏng"])
+            );
 
-        if (!maDk) {
-          failed++;
-          results.push({
-            row: rowNumber,
-            maDk: "",
-            status: "error",
-            message: "Thiếu MA_DK.",
-          });
-          continue;
+            const hinh = normalizeResult(getCell(row, ["hinh", "hình"]));
+            const duong = normalizeResult(getCell(row, ["duong", "đường"]));
+
+            if (!maDk) {
+              failed++;
+              results.push({
+                row: rowNumber,
+                maDk: "",
+                status: "error",
+                message: "Thiếu MA_DK.",
+              });
+            } else {
+              const student = await prisma.student.findUnique({
+                where: { maDk },
+                select: { id: true },
+              });
+
+              if (!student) {
+                failed++;
+                results.push({
+                  row: rowNumber,
+                  maDk,
+                  status: "error",
+                  message: "Không tìm thấy học viên theo MA_DK.",
+                });
+              } else {
+                const ngayThiFromFile = excelDateToDate(ngayThiRaw);
+                const ngayThiFallback = examDateFallback ? excelDateToDate(examDateFallback) : null;
+                const ngayThi = ngayThiFromFile || ngayThiFallback;
+
+                if (!ngayThi) {
+                  failed++;
+                  results.push({
+                    row: rowNumber,
+                    maDk,
+                    status: "error",
+                    message: "Thiếu ngày thi hợp lệ trong file và cũng không có ngày dự phòng.",
+                  });
+                } else {
+                  const existing = await prisma.graduationResult.findFirst({
+                    where: { studentId: student.id },
+                    orderBy: { createdAt: "desc" },
+                  });
+
+                  const mergedLyThuyet = lyThuyet || existing?.lyThuyet || null;
+                  const mergedMoPhong = moPhong || existing?.moPhong || null;
+                  const mergedHinh = hinh || existing?.hinh || null;
+                  const mergedDuong = duong || existing?.duong || null;
+
+                  const { ketQua, noiDungRot } = calcKetQua(
+                    mergedLyThuyet,
+                    mergedMoPhong,
+                    mergedHinh,
+                    mergedDuong
+                  );
+
+                  if (!preview) {
+                    await prisma.graduationResult.create({
+                      data: {
+                        studentId: student.id,
+                        ngayThi,
+                        lyThuyet: mergedLyThuyet,
+                        moPhong: mergedMoPhong,
+                        hinh: mergedHinh,
+                        duong: mergedDuong,
+                        ketQua,
+                        noiDungRot: note
+                          ? noiDungRot
+                            ? `${noiDungRot} | ${note}`
+                            : note
+                          : noiDungRot,
+                      },
+                    });
+                  }
+
+                  success++;
+                  results.push({
+                    row: rowNumber,
+                    maDk,
+                    status: "success",
+                    message: preview
+                      ? "Dữ liệu hợp lệ, sẵn sàng import."
+                      : "Đã import thành công.",
+                  });
+                }
+              }
+            }
+          } catch (error) {
+            failed++;
+            results.push({
+              row: rowNumber,
+              maDk: "",
+              status: "error",
+              message:
+                error instanceof Error ? error.message : "Lỗi không xác định khi xử lý dòng.",
+            });
+          }
+
+          const processed = i + 1;
+          const progress = Math.round((processed / total) * 100);
+          const lastResult = results[results.length - 1];
+
+          controller.enqueue(
+            encoder.encode(
+              sseLine({
+                type: "progress",
+                rowResult: lastResult,
+                summary: {
+                  total,
+                  processed,
+                  success,
+                  failed,
+                  progress,
+                },
+              })
+            )
+          );
         }
 
-        const student = await prisma.student.findUnique({
-          where: { maDk },
-          select: { id: true },
-        });
-
-        if (!student) {
-          failed++;
-          results.push({
-            row: rowNumber,
-            maDk,
-            status: "error",
-            message: "Không tìm thấy học viên theo MA_DK.",
-          });
-          continue;
-        }
-
-        const ngayThiFromFile = excelDateToDate(ngayThiRaw);
-        const ngayThiFallback = examDateFallback ? excelDateToDate(examDateFallback) : null;
-        const ngayThi = ngayThiFromFile || ngayThiFallback;
-
-        if (!ngayThi) {
-          failed++;
-          results.push({
-            row: rowNumber,
-            maDk,
-            status: "error",
-            message: "Thiếu ngày thi hợp lệ trong file và cũng không có ngày dự phòng.",
-          });
-          continue;
-        }
-
-        const existing = await prisma.graduationResult.findFirst({
-          where: { studentId: student.id },
-          orderBy: { createdAt: "desc" },
-        });
-
-        const mergedLyThuyet = lyThuyet || existing?.lyThuyet || null;
-        const mergedMoPhong = moPhong || existing?.moPhong || null;
-        const mergedHinh = hinh || existing?.hinh || null;
-        const mergedDuong = duong || existing?.duong || null;
-
-        const { ketQua, noiDungRot } = calcKetQua(
-          mergedLyThuyet,
-          mergedMoPhong,
-          mergedHinh,
-          mergedDuong
+        controller.enqueue(
+          encoder.encode(
+            sseLine({
+              type: "done",
+              ok: failed === 0,
+              message: preview
+                ? "Kiểm tra file tốt nghiệp hoàn tất."
+                : "Import kết quả tốt nghiệp hoàn tất.",
+              summary: {
+                total,
+                processed: total,
+                success,
+                failed,
+                progress: 100,
+              },
+              results,
+            })
+          )
         );
 
-        if (!preview) {
-          await prisma.graduationResult.create({
-            data: {
-              studentId: student.id,
-              ngayThi,
-              lyThuyet: mergedLyThuyet,
-              moPhong: mergedMoPhong,
-              hinh: mergedHinh,
-              duong: mergedDuong,
-              ketQua,
-              noiDungRot: note
-                ? noiDungRot
-                  ? `${noiDungRot} | ${note}`
-                  : note
-                : noiDungRot,
-            },
-          });
-        }
-
-        success++;
-        results.push({
-          row: rowNumber,
-          maDk,
-          status: "success",
-          message: preview
-            ? "Dữ liệu hợp lệ, sẵn sàng import."
-            : "Đã import thành công.",
-        });
-      } catch (error) {
-        failed++;
-        results.push({
-          row: rowNumber,
-          maDk: "",
-          status: "error",
-          message:
-            error instanceof Error ? error.message : "Lỗi không xác định khi xử lý dòng.",
-        });
-      }
-    }
-
-    return NextResponse.json({
-      ok: failed === 0,
-      message: preview
-        ? "Kiểm tra file hoàn tất."
-        : "Import kết quả tốt nghiệp hoàn tất.",
-      summary: {
-        total: rows.length,
-        success,
-        failed,
+        controller.close();
       },
-      results,
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+      },
     });
   } catch (error) {
-    console.error("IMPORT_GRADUATION_ERROR:", error);
-    return NextResponse.json(
-      { ok: false, message: "Import tốt nghiệp thất bại." },
-      { status: 500 }
+    return new Response(
+      encoder.encode(
+        sseLine({
+          type: "done",
+          ok: false,
+          message: error instanceof Error ? error.message : "Import tốt nghiệp thất bại.",
+          summary: { total: 0, success: 0, failed: 1, progress: 100 },
+          results: [],
+        })
+      ),
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "text/event-stream; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      }
     );
   }
 }
