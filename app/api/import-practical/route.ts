@@ -5,12 +5,24 @@ import { prisma } from "@/lib/prisma";
 export const dynamic = "force-dynamic";
 
 type RawRow = Record<string, unknown>;
+type CompareStatus = "new" | "same" | "update" | "conflict" | "warning";
+type ComponentState = "DAT" | "ROT" | "VANG" | null;
+
+type ResultStateMap = {
+  lyThuyet: ComponentState;
+  moPhong: ComponentState;
+  hinh: ComponentState;
+  duong: ComponentState;
+};
 
 type StreamRowResult = {
   row: number;
   maDk: string;
   status: "success" | "error";
   message: string;
+  oldResult?: string | null;
+  newResult?: string | null;
+  compareStatus?: CompareStatus;
 };
 
 function normalizeValue(value: unknown) {
@@ -26,12 +38,11 @@ function normalizeMaDK(value: unknown) {
   return normalizeValue(value).toUpperCase();
 }
 
-function normalizeExamStatus(value: unknown): string {
+function normalizeExamStatus(value: unknown): ComponentState {
   const v = normalizeValue(value).toLowerCase();
 
-  if (!v) return "";
-
-  if (v === "đạt" || v === "dat") return "Đạt";
+  if (!v) return null;
+  if (v === "đạt" || v === "dat") return "DAT";
 
   if (
     v === "không đạt" ||
@@ -41,12 +52,11 @@ function normalizeExamStatus(value: unknown): string {
     v === "trượt" ||
     v === "truot"
   ) {
-    return "Không đạt";
+    return "ROT";
   }
 
-  if (v === "vắng" || v === "vang") return "Vắng";
-
-  return normalizeValue(value);
+  if (v === "vắng" || v === "vang") return "VANG";
+  return null;
 }
 
 function getCell(row: RawRow, acceptedKeys: string[]) {
@@ -115,51 +125,191 @@ function isComponentStillValid(
     baoLuuDenNgay?: Date | null;
     conHieuLuc?: boolean;
   },
-  examDate: Date | null
+  examDate: Date
 ) {
-  if (!component.ngayDat || !component.baoLuuDenNgay || !examDate) return false;
+  if (!component.ngayDat || !component.baoLuuDenNgay) return false;
   if (component.conHieuLuc === false) return false;
-  return examDate <= component.baoLuuDenNgay;
+  return examDate.getTime() <= component.baoLuuDenNgay.getTime();
+}
+
+function buildSummaryCode(state: ResultStateMap) {
+  const parts: string[] = [];
+
+  const allPassed =
+    state.lyThuyet === "DAT" &&
+    state.moPhong === "DAT" &&
+    state.hinh === "DAT" &&
+    state.duong === "DAT";
+
+  if (allPassed) return "DAT";
+
+  const pushCode = (value: ComponentState, pass: string, fail: string, absent: string) => {
+    if (value === "DAT") parts.push(pass);
+    if (value === "ROT") parts.push(fail);
+    if (value === "VANG") parts.push(absent);
+  };
+
+  pushCode(state.lyThuyet, "ĐLT", "RLT", "VLT");
+  pushCode(state.moPhong, "ĐMP", "RMP", "VMP");
+  pushCode(state.hinh, "ĐH", "RH", "VH");
+  pushCode(state.duong, "ĐĐ", "RĐ", "VĐ");
+
+  if (parts.length === 0) return "CHUA_CO";
+  return parts.join("+");
+}
+
+function countPassed(state: ResultStateMap) {
+  return [state.lyThuyet, state.moPhong, state.hinh, state.duong].filter(
+    (x) => x === "DAT"
+  ).length;
+}
+
+function compareResult(
+  oldState: ResultStateMap,
+  newState: ResultStateMap,
+  conflictKeys: string[]
+): { status: CompareStatus; message: string } {
+  const oldSummary = buildSummaryCode(oldState);
+  const newSummary = buildSummaryCode(newState);
+
+  if (conflictKeys.length > 0) {
+    return {
+      status: "conflict",
+      message: `File mới xung đột với kết quả cũ còn hiệu lực ở: ${conflictKeys.join(", ")}.`,
+    };
+  }
+
+  if (oldSummary === "CHUA_CO") {
+    return { status: "new", message: "Chưa có dữ liệu trước đó." };
+  }
+
+  if (oldSummary === newSummary) {
+    return { status: "same", message: "Trùng kết quả cũ." };
+  }
+
+  if (countPassed(newState) > countPassed(oldState)) {
+    return { status: "update", message: "Bổ sung thêm nội dung đạt còn hiệu lực." };
+  }
+
+  return { status: "warning", message: "Kết quả thay đổi, cần kiểm tra lại." };
+}
+
+function calcKetQua(state: ResultStateMap) {
+  const failedCodes: string[] = [];
+
+  if (state.lyThuyet === "ROT" || state.lyThuyet === "VANG") failedCodes.push("L");
+  if (state.moPhong === "ROT" || state.moPhong === "VANG") failedCodes.push("M");
+  if (state.hinh === "ROT" || state.hinh === "VANG") failedCodes.push("H");
+  if (state.duong === "ROT" || state.duong === "VANG") failedCodes.push("Đ");
+
+  const allPassed =
+    state.lyThuyet === "DAT" &&
+    state.moPhong === "DAT" &&
+    state.hinh === "DAT" &&
+    state.duong === "DAT";
+
+  if (allPassed) {
+    return { ketQua: "Đạt", noiDungRot: "" };
+  }
+
+  if (failedCodes.length > 0) {
+    return { ketQua: "Không đạt", noiDungRot: failedCodes.join("-") };
+  }
+
+  return { ketQua: "Không đạt", noiDungRot: "" };
+}
+
+function getValidPracticalCarry(
+  components: Array<{
+    tenNoiDung: string;
+    ngayDat: Date | null;
+    baoLuuDenNgay: Date | null;
+    conHieuLuc: boolean;
+  }>,
+  examDate: Date
+): ResultStateMap {
+  const result: ResultStateMap = {
+    lyThuyet: null,
+    moPhong: null,
+    hinh: null,
+    duong: null,
+  };
+
+  for (const item of components) {
+    if (!isComponentStillValid(item, examDate)) continue;
+
+    const key = item.tenNoiDung.toLowerCase();
+    if (key === "lý thuyết") result.lyThuyet = "DAT";
+    if (key === "mô phỏng") result.moPhong = "DAT";
+    if (key === "hình") result.hinh = "DAT";
+    if (key === "đường") result.duong = "DAT";
+  }
+
+  return result;
+}
+
+function mergeWithCarry(
+  carry: ResultStateMap,
+  incoming: ResultStateMap
+): { effective: ResultStateMap; conflicts: string[] } {
+  const conflicts: string[] = [];
+  const effective: ResultStateMap = {
+    lyThuyet: null,
+    moPhong: null,
+    hinh: null,
+    duong: null,
+  };
+
+  const apply = (
+    key: keyof ResultStateMap,
+    label: string
+  ) => {
+    const oldValue = carry[key];
+    const newValue = incoming[key];
+
+    if (oldValue === "DAT" && (newValue === "ROT" || newValue === "VANG")) {
+      conflicts.push(label);
+      effective[key] = "DAT";
+      return;
+    }
+
+    if (oldValue === "DAT" && (newValue === null || newValue === "DAT")) {
+      effective[key] = "DAT";
+      return;
+    }
+
+    effective[key] = newValue;
+  };
+
+  apply("lyThuyet", "Lý thuyết");
+  apply("moPhong", "Mô phỏng");
+  apply("hinh", "Hình");
+  apply("duong", "Đường");
+
+  return { effective, conflicts };
 }
 
 function buildProtectionNote(
-  components: Array<{
-    tenNoiDung: string;
-    ngayDat?: Date | null;
-    baoLuuDenNgay?: Date | null;
-    conHieuLuc?: boolean;
-  }>
+  componentMap: Map<string, { ngayDat: Date | null; baoLuuDenNgay: Date | null; conHieuLuc: boolean }>
 ) {
-  const now = new Date();
+  const order = [
+    { key: "lý thuyết", code: "L" },
+    { key: "mô phỏng", code: "M" },
+    { key: "hình", code: "H" },
+    { key: "đường", code: "Đ" },
+  ];
+
   const notes: string[] = [];
 
-  for (const item of components) {
-    const code =
-      item.tenNoiDung === "Lý thuyết"
-        ? "L"
-        : item.tenNoiDung === "Mô phỏng"
-        ? "M"
-        : item.tenNoiDung === "Hình"
-        ? "H"
-        : item.tenNoiDung === "Đường"
-        ? "Đ"
-        : item.tenNoiDung;
+  for (const item of order) {
+    const comp = componentMap.get(item.key);
 
-    if (!item.ngayDat || !item.baoLuuDenNgay) {
-      notes.push(`${code}: chưa đạt`);
+    if (!comp?.ngayDat || !comp.baoLuuDenNgay || comp.conHieuLuc === false) {
+      notes.push(`${item.code}: chưa đạt`);
       continue;
     }
 
-    const diffMs = item.baoLuuDenNgay.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-
-    if (item.conHieuLuc === false || diffDays < 0) {
-      notes.push(`${code}: hết hạn ${formatDateVN(item.baoLuuDenNgay)}`);
-    } else if (diffDays <= 30) {
-      notes.push(`${code}: sắp hết hạn ${formatDateVN(item.baoLuuDenNgay)}`);
-    } else {
-      notes.push(`${code}: còn hạn ${formatDateVN(item.baoLuuDenNgay)}`);
-    }
+    notes.push(`${item.code}: còn hạn ${formatDateVN(comp.baoLuuDenNgay)}`);
   }
 
   return notes.join(" | ");
@@ -180,6 +330,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const examDateFallbackRaw = normalizeValue(formData.get("examDate"));
     const note = normalizeValue(formData.get("note"));
+    const force = formData.get("force") === "1";
 
     if (!file) {
       return new Response(
@@ -287,6 +438,13 @@ export async function POST(req: NextRequest) {
           try {
             const maDk = normalizeMaDK(getCell(row, ["ma dk", "ma_dk", "madk"]));
 
+            const incomingState: ResultStateMap = {
+              lyThuyet: normalizeExamStatus(getCell(row, ["ly_thuyet", "ly thuyet", "lý thuyết"])),
+              moPhong: normalizeExamStatus(getCell(row, ["mo_phong", "mo phong", "mô phỏng"])),
+              hinh: normalizeExamStatus(getCell(row, ["hinh", "hình"])),
+              duong: normalizeExamStatus(getCell(row, ["duong", "đường"])),
+            };
+
             if (!maDk) {
               failed++;
               results.push({
@@ -322,156 +480,140 @@ export async function POST(req: NextRequest) {
                 const examDateFallback = examDateFallbackRaw ? parseDate(examDateFallbackRaw) : null;
                 const examDate = examDateFromFile || examDateFallback;
 
-                const statuses = {
-                  lyThuyet: normalizeExamStatus(
-                    getCell(row, ["ly_thuyet", "ly thuyet", "lý thuyết"])
-                  ),
-                  moPhong: normalizeExamStatus(
-                    getCell(row, ["mo_phong", "mo phong", "mô phỏng"])
-                  ),
-                  hinh: normalizeExamStatus(getCell(row, ["hinh", "hình"])),
-                  duong: normalizeExamStatus(getCell(row, ["duong", "đường"])),
-                };
-
-                const hasAnyStatus = Object.values(statuses).some(Boolean);
-
-                if (!hasAnyStatus) {
+                if (!examDate) {
                   failed++;
                   results.push({
                     row: rowNumber,
                     maDk,
                     status: "error",
-                    message:
-                      "Không có dữ liệu kết quả nào trong các cột Lý thuyết / Mô phỏng / Hình / Đường.",
+                    message: "Thiếu ngày thi sát hạch hợp lệ trong file và cũng không có ngày dự phòng.",
                   });
                 } else {
-                  const needExamDate = Object.values(statuses).includes("Đạt");
+                  const carry = getValidPracticalCarry(student.examComponents, examDate);
+                  const { effective, conflicts } = mergeWithCarry(carry, incomingState);
 
-                  if (needExamDate && !examDate) {
+                  const oldResult = buildSummaryCode(carry);
+                  const newResult = buildSummaryCode(effective);
+                  const compare = compareResult(carry, effective, conflicts);
+
+                  if (!preview && compare.status === "conflict" && !force) {
                     failed++;
                     results.push({
                       row: rowNumber,
                       maDk,
                       status: "error",
-                      message: "Có nội dung Đạt nhưng thiếu ngày thi sát hạch hợp lệ.",
+                      message: "Xung đột với kết quả cũ còn hiệu lực. Cần tick xác nhận để import tiếp.",
+                      oldResult,
+                      newResult,
+                      compareStatus: compare.status,
                     });
                   } else {
                     if (!preview) {
+                      const componentMap = new Map(
+                        student.examComponents.map((item) => [item.tenNoiDung.toLowerCase(), item])
+                      );
+
                       const componentDefs = [
-                        { tenNoiDung: "Lý thuyết", status: statuses.lyThuyet },
-                        { tenNoiDung: "Mô phỏng", status: statuses.moPhong },
-                        { tenNoiDung: "Hình", status: statuses.hinh },
-                        { tenNoiDung: "Đường", status: statuses.duong },
+                        { key: "lý thuyết", state: effective.lyThuyet, incoming: incomingState.lyThuyet, label: "Lý thuyết" },
+                        { key: "mô phỏng", state: effective.moPhong, incoming: incomingState.moPhong, label: "Mô phỏng" },
+                        { key: "hình", state: effective.hinh, incoming: incomingState.hinh, label: "Hình" },
+                        { key: "đường", state: effective.duong, incoming: incomingState.duong, label: "Đường" },
                       ] as const;
 
                       for (const item of componentDefs) {
-                        const oldComponent = student.examComponents.find(
-                          (c) => c.tenNoiDung.toLowerCase() === item.tenNoiDung.toLowerCase()
-                        );
+                        const oldComp = componentMap.get(item.key);
 
-                        if (item.status === "Đạt") {
-                          const ngayDat = examDate as Date;
-                          const baoLuuDenNgay = addOneYear(ngayDat);
+                        if (item.state === "DAT") {
+                          if (item.incoming === "DAT") {
+                            const ngayDat = examDate;
+                            const baoLuuDenNgay = addOneYear(ngayDat);
 
-                          if (oldComponent) {
-                            await prisma.examComponent.update({
-                              where: { id: oldComponent.id },
-                              data: {
-                                tenNoiDung: item.tenNoiDung,
-                                ngayDat,
-                                baoLuuDenNgay,
-                                conHieuLuc: true,
-                                ghiChu: `Đạt ngày ${formatDateVN(
-                                  ngayDat
-                                )}, bảo lưu đến ${formatDateVN(baoLuuDenNgay)}`,
-                              },
-                            });
-                          } else {
-                            await prisma.examComponent.create({
-                              data: {
-                                studentId: student.id,
-                                tenNoiDung: item.tenNoiDung,
-                                ngayDat,
-                                baoLuuDenNgay,
-                                conHieuLuc: true,
-                                ghiChu: `Đạt ngày ${formatDateVN(
-                                  ngayDat
-                                )}, bảo lưu đến ${formatDateVN(baoLuuDenNgay)}`,
-                              },
-                            });
-                          }
-                        } else if (item.status === "Không đạt" || item.status === "Vắng") {
-                          if (oldComponent) {
-                            const stillValid = isComponentStillValid(oldComponent, examDate);
-                            if (!stillValid && oldComponent.conHieuLuc !== false && oldComponent.baoLuuDenNgay) {
+                            if (oldComp) {
                               await prisma.examComponent.update({
-                                where: { id: oldComponent.id },
+                                where: { id: oldComp.id },
+                                data: {
+                                  tenNoiDung: item.label,
+                                  ngayDat,
+                                  baoLuuDenNgay,
+                                  conHieuLuc: true,
+                                  ghiChu: `Đạt ngày ${formatDateVN(ngayDat)}, bảo lưu đến ${formatDateVN(baoLuuDenNgay)}`,
+                                },
+                              });
+                              componentMap.set(item.key, {
+                                ...oldComp,
+                                ngayDat,
+                                baoLuuDenNgay,
+                                conHieuLuc: true,
+                              });
+                            } else {
+                              const created = await prisma.examComponent.create({
+                                data: {
+                                  studentId: student.id,
+                                  tenNoiDung: item.label,
+                                  ngayDat,
+                                  baoLuuDenNgay,
+                                  conHieuLuc: true,
+                                  ghiChu: `Đạt ngày ${formatDateVN(ngayDat)}, bảo lưu đến ${formatDateVN(baoLuuDenNgay)}`,
+                                },
+                              });
+                              componentMap.set(item.key, created);
+                            }
+                          }
+                        } else {
+                          if (oldComp && oldComp.baoLuuDenNgay && examDate.getTime() > oldComp.baoLuuDenNgay.getTime()) {
+                            if (oldComp.conHieuLuc !== false) {
+                              await prisma.examComponent.update({
+                                where: { id: oldComp.id },
                                 data: {
                                   conHieuLuc: false,
-                                  ghiChu: `Hết hiệu lực bảo lưu ngày ${formatDateVN(
-                                    oldComponent.baoLuuDenNgay
-                                  )}`,
+                                  ghiChu: `Hết hiệu lực bảo lưu ngày ${formatDateVN(oldComp.baoLuuDenNgay)}`,
                                 },
                               });
                             }
+
+                            componentMap.set(item.key, {
+                              ...oldComp,
+                              conHieuLuc: false,
+                            });
                           }
                         }
                       }
 
-                      const latestComponents = await prisma.examComponent.findMany({
-                        where: { studentId: student.id },
-                      });
-
-                      const componentMap = new Map(
-                        latestComponents.map((item) => [item.tenNoiDung.toLowerCase(), item])
+                      const noteBaoLuu = buildProtectionNote(
+                        new Map(
+                          Array.from(componentMap.entries()).map(([k, v]) => [
+                            k,
+                            {
+                              ngayDat: v.ngayDat,
+                              baoLuuDenNgay: v.baoLuuDenNgay,
+                              conHieuLuc: v.conHieuLuc,
+                            },
+                          ])
+                        )
                       );
 
-                      const finalLy = componentMap.get("lý thuyết");
-                      const finalMp = componentMap.get("mô phỏng");
-                      const finalH = componentMap.get("hình");
-                      const finalD = componentMap.get("đường");
-
-                      const validLy = finalLy ? isComponentStillValid(finalLy, examDate) : false;
-                      const validMp = finalMp ? isComponentStillValid(finalMp, examDate) : false;
-                      const validH = finalH ? isComponentStillValid(finalH, examDate) : false;
-                      const validD = finalD ? isComponentStillValid(finalD, examDate) : false;
-
-                      const finalFailedCodes: string[] = [];
-                      if (!validLy) finalFailedCodes.push("L");
-                      if (!validMp) finalFailedCodes.push("M");
-                      if (!validH) finalFailedCodes.push("H");
-                      if (!validD) finalFailedCodes.push("Đ");
-
-                      const allPassed = finalFailedCodes.length === 0;
-
-                      const allComponentsForNote = [
-                        finalLy ?? { tenNoiDung: "Lý thuyết", ngayDat: null, baoLuuDenNgay: null, conHieuLuc: false },
-                        finalMp ?? { tenNoiDung: "Mô phỏng", ngayDat: null, baoLuuDenNgay: null, conHieuLuc: false },
-                        finalH ?? { tenNoiDung: "Hình", ngayDat: null, baoLuuDenNgay: null, conHieuLuc: false },
-                        finalD ?? { tenNoiDung: "Đường", ngayDat: null, baoLuuDenNgay: null, conHieuLuc: false },
-                      ];
-
-                      const ghiChuBaoLuu = buildProtectionNote(allComponentsForNote);
                       const finalNote = note
-                        ? `${ghiChuBaoLuu}${ghiChuBaoLuu ? " | " : ""}${note}`
-                        : ghiChuBaoLuu;
+                        ? `${noteBaoLuu}${noteBaoLuu ? " | " : ""}${note}`
+                        : noteBaoLuu;
 
-                      const allNgayDat = [finalLy?.ngayDat, finalMp?.ngayDat, finalH?.ngayDat, finalD?.ngayDat]
-                        .filter(Boolean)
-                        .map((d) => new Date(d as Date));
+                      const validDates = Array.from(componentMap.values())
+                        .filter((x) => x.ngayDat && x.baoLuuDenNgay && x.conHieuLuc)
+                        .map((x) => new Date(x.ngayDat as Date));
 
                       const latestNgayDat =
-                        allNgayDat.length > 0
-                          ? new Date(Math.max(...allNgayDat.map((d) => d.getTime())))
+                        validDates.length > 0
+                          ? new Date(Math.max(...validDates.map((d) => d.getTime())))
                           : null;
+
+                      const { ketQua, noiDungRot } = calcKetQua(effective);
 
                       await prisma.practicalExamResult.create({
                         data: {
                           studentId: student.id,
                           ngayThi: examDate,
-                          ngayDat: allPassed ? latestNgayDat : null,
-                          ketQua: allPassed ? "Đạt" : "Không đạt",
-                          noiDungRot: allPassed ? "" : finalFailedCodes.join("-"),
+                          ngayDat: ketQua === "Đạt" ? latestNgayDat : null,
+                          ketQua,
+                          noiDungRot,
                           ghiChu: finalNote,
                         },
                       });
@@ -482,9 +624,10 @@ export async function POST(req: NextRequest) {
                       row: rowNumber,
                       maDk,
                       status: "success",
-                      message: preview
-                        ? "Dữ liệu hợp lệ, sẵn sàng import sát hạch."
-                        : "Đã import sát hạch thành công.",
+                      message: preview ? compare.message : "Đã xử lý dữ liệu sát hạch thành công.",
+                      oldResult,
+                      newResult,
+                      compareStatus: compare.status,
                     });
                   }
                 }

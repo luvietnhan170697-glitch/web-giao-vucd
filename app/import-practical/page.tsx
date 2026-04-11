@@ -4,11 +4,16 @@ import { useMemo, useState } from "react";
 import DashboardShell from "@/components/dashboard-shell";
 import Header from "@/components/header";
 
+type CompareStatus = "new" | "same" | "update" | "conflict" | "warning";
+
 type RowResult = {
   row: number;
   maDk: string;
   status: "success" | "error";
   message: string;
+  oldResult?: string | null;
+  newResult?: string | null;
+  compareStatus?: CompareStatus;
 };
 
 type Summary = {
@@ -65,6 +70,15 @@ function SummaryCard({
   );
 }
 
+function compareBadge(status?: CompareStatus) {
+  if (status === "new") return "Mới";
+  if (status === "same") return "Trùng";
+  if (status === "update") return "Cập nhật";
+  if (status === "conflict") return "Xung đột";
+  if (status === "warning") return "Cảnh báo";
+  return "-";
+}
+
 const thStyle: React.CSSProperties = {
   textAlign: "left",
   padding: "12px 14px",
@@ -84,6 +98,7 @@ export default function ImportPracticalPage() {
   const [file, setFile] = useState<File | null>(null);
   const [examDate, setExamDate] = useState("");
   const [note, setNote] = useState("");
+  const [forceImport, setForceImport] = useState(false);
 
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<"preview" | "import" | null>(null);
@@ -127,6 +142,8 @@ export default function ImportPracticalPage() {
       if (note.trim()) {
         formData.append("note", note.trim());
       }
+
+      formData.append("force", forceImport ? "1" : "0");
 
       const res = await fetch(
         preview ? "/api/import-practical?preview=1" : "/api/import-practical",
@@ -191,6 +208,7 @@ export default function ImportPracticalPage() {
 
   const successRows = results.filter((x) => x.status === "success");
   const errorRows = results.filter((x) => x.status === "error");
+  const conflictRows = results.filter((x) => x.compareStatus === "conflict");
 
   return (
     <DashboardShell>
@@ -270,6 +288,23 @@ export default function ImportPracticalPage() {
             }}
           />
         </div>
+
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 16,
+            fontWeight: 600,
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={forceImport}
+            onChange={(e) => setForceImport(e.target.checked)}
+          />
+          Tôi xác nhận import kể cả khi có xung đột
+        </label>
 
         <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
           <button
@@ -395,6 +430,22 @@ export default function ImportPracticalPage() {
               {message}
             </div>
 
+            {!!conflictRows.length && (
+              <div
+                style={{
+                  padding: 14,
+                  borderRadius: 12,
+                  marginBottom: 16,
+                  border: "1px solid #fca5a5",
+                  background: "#fff7ed",
+                  color: "#9a3412",
+                  fontWeight: 700,
+                }}
+              >
+                Có {conflictRows.length} dòng xung đột với dữ liệu cũ.
+              </div>
+            )}
+
             <div
               style={{
                 display: "grid",
@@ -406,6 +457,45 @@ export default function ImportPracticalPage() {
               <SummaryCard title="Tổng số dòng" value={summary.total} background="#f8fafc" />
               <SummaryCard title="Thành công" value={summary.success} background="#f0fdf4" />
               <SummaryCard title="Lỗi" value={summary.failed} background="#fef2f2" />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>
+                Bảng đối chiếu cũ - mới
+              </div>
+              <div
+                style={{
+                  overflowX: "auto",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: 12,
+                  background: "#fff",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc" }}>
+                      <th style={thStyle}>Dòng</th>
+                      <th style={thStyle}>MA_DK</th>
+                      <th style={thStyle}>KQ cũ</th>
+                      <th style={thStyle}>KQ mới</th>
+                      <th style={thStyle}>So sánh</th>
+                      <th style={thStyle}>Ghi chú</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.map((item, index) => (
+                      <tr key={`${item.row}-${index}`}>
+                        <td style={tdStyle}>{item.row}</td>
+                        <td style={tdStyle}>{item.maDk || "-"}</td>
+                        <td style={tdStyle}>{item.oldResult || "-"}</td>
+                        <td style={tdStyle}>{item.newResult || "-"}</td>
+                        <td style={tdStyle}>{compareBadge(item.compareStatus)}</td>
+                        <td style={tdStyle}>{item.message}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
             {!!errorRows.length && (
@@ -426,7 +516,9 @@ export default function ImportPracticalPage() {
                       <tr style={{ background: "#f8fafc" }}>
                         <th style={thStyle}>Dòng</th>
                         <th style={thStyle}>MA_DK</th>
-                        <th style={thStyle}>Trạng thái</th>
+                        <th style={thStyle}>KQ cũ</th>
+                        <th style={thStyle}>KQ mới</th>
+                        <th style={thStyle}>So sánh</th>
                         <th style={thStyle}>Lý do</th>
                       </tr>
                     </thead>
@@ -435,7 +527,9 @@ export default function ImportPracticalPage() {
                         <tr key={`${item.row}-${index}`}>
                           <td style={tdStyle}>{item.row}</td>
                           <td style={tdStyle}>{item.maDk || "-"}</td>
-                          <td style={tdStyle}>Lỗi</td>
+                          <td style={tdStyle}>{item.oldResult || "-"}</td>
+                          <td style={tdStyle}>{item.newResult || "-"}</td>
+                          <td style={tdStyle}>{compareBadge(item.compareStatus)}</td>
                           <td style={tdStyle}>{item.message}</td>
                         </tr>
                       ))}
@@ -463,7 +557,9 @@ export default function ImportPracticalPage() {
                       <tr style={{ background: "#f8fafc" }}>
                         <th style={thStyle}>Dòng</th>
                         <th style={thStyle}>MA_DK</th>
-                        <th style={thStyle}>Trạng thái</th>
+                        <th style={thStyle}>KQ cũ</th>
+                        <th style={thStyle}>KQ mới</th>
+                        <th style={thStyle}>So sánh</th>
                         <th style={thStyle}>Kết quả</th>
                       </tr>
                     </thead>
@@ -472,7 +568,9 @@ export default function ImportPracticalPage() {
                         <tr key={`${item.row}-${index}`}>
                           <td style={tdStyle}>{item.row}</td>
                           <td style={tdStyle}>{item.maDk || "-"}</td>
-                          <td style={tdStyle}>Thành công</td>
+                          <td style={tdStyle}>{item.oldResult || "-"}</td>
+                          <td style={tdStyle}>{item.newResult || "-"}</td>
+                          <td style={tdStyle}>{compareBadge(item.compareStatus)}</td>
                           <td style={tdStyle}>{item.message}</td>
                         </tr>
                       ))}
