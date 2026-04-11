@@ -62,7 +62,6 @@ model Student {
 
   course              Course?               @relation(fields: [courseId], references: [id])
 
-  // ✅ Quan hệ bắt buộc phải có
   medicalChecks       MedicalCheck[]
   graduationResults   GraduationResult[]
   practicalResults    PracticalExamResult[]

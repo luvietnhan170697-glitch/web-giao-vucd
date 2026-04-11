@@ -21,7 +21,10 @@ type CurrentUser = {
 const menus = [
   { href: "/", label: "Dashboard", icon: HomeIcon, roles: ["admin", "staff", "viewer"] },
   { href: "/students", label: "Danh sách học viên", icon: UsersIcon, roles: ["admin", "staff", "viewer"] },
+
   { href: "/import-xml", label: "Import XML", icon: UploadIcon, roles: ["admin", "staff"] },
+  { href: "/import-excel", label: "Import Excel", icon: UploadIcon, roles: ["admin", "staff"] },
+
   { href: "/import-graduation", label: "Import tốt nghiệp", icon: FileIcon, roles: ["admin", "staff"] },
   { href: "/import-practical", label: "Import sát hạch", icon: FileIcon, roles: ["admin", "staff"] },
   { href: "/export-ma-dk", label: "Export MA_DK", icon: DownloadIcon, roles: ["admin", "staff"] },
@@ -108,6 +111,7 @@ export default function Sidebar() {
         >
           GV
         </div>
+
         <div style={{ fontSize: 20, fontWeight: 800 }}>Hệ thống Giáo vụ</div>
         <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 6 }}>
           Quản lý học viên và dữ liệu đào tạo
@@ -154,10 +158,19 @@ export default function Sidebar() {
           <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 6 }}>
             Đăng nhập bằng
           </div>
+
           <div style={{ fontSize: 14, fontWeight: 700, color: "#ffffff" }}>
             {user?.fullName || user?.username || "Chưa xác định"}
           </div>
-          <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4, marginBottom: 12 }}>
+
+          <div
+            style={{
+              fontSize: 12,
+              color: "#94a3b8",
+              marginTop: 4,
+              marginBottom: 12,
+            }}
+          >
             Quyền: {user?.role || "unknown"}
           </div>
 
