@@ -1,241 +1,265 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { prisma } from "../../../lib/prisma";
+import { prisma } from "@/lib/prisma";
 
-function normalizeValue(value: unknown) {
+export const dynamic = "force-dynamic";
+
+type RawRow = Record<string, unknown>;
+
+function normalizeHeader(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function getCell(row: RawRow, candidates: string[]) {
+  for (const [key, value] of Object.entries(row)) {
+    const normalizedKey = normalizeHeader(String(key));
+    if (candidates.includes(normalizedKey)) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function cleanString(value: unknown) {
   if (value === null || value === undefined) return "";
   return String(value).trim();
 }
 
-function normalizeMaDK(value: unknown) {
-  return normalizeValue(value).toUpperCase();
+function normalizeResult(value: unknown): string | null {
+  const raw = cleanString(value).toLowerCase();
+  if (!raw) return null;
+
+  if (["đạt", "dat", "pass", "passed"].includes(raw)) return "DAT";
+  if (["rớt", "rot", "trượt", "truot", "fail", "failed", "không đạt", "khong dat"].includes(raw)) return "ROT";
+  if (["vắng", "vang", "absent"].includes(raw)) return "VANG";
+
+  return raw.toUpperCase();
 }
 
-function normalizeExamStatus(value: unknown): string {
-  const v = normalizeValue(value).toLowerCase();
-
-  if (!v) return "";
-
-  if (v === "đạt" || v === "dat") return "Đạt";
-
-  if (
-    v === "không đạt" ||
-    v === "khong dat" ||
-    v === "rớt" ||
-    v === "rot" ||
-    v === "trượt" ||
-    v === "truot"
-  ) {
-    return "Không đạt";
-  }
-
-  if (v === "vắng" || v === "vang") return "Vắng";
-
-  return normalizeValue(value);
-}
-
-function getCell(row: Record<string, unknown>, acceptedKeys: string[]) {
-  for (const key of Object.keys(row)) {
-    const normalizedKey = key.trim().toLowerCase();
-    if (acceptedKeys.includes(normalizedKey)) {
-      return row[key];
-    }
-  }
-  return "";
-}
-
-function pickNewOrOld(newValue: unknown, oldValue: unknown): string {
-  const normalizedNew = normalizeExamStatus(newValue);
-  if (normalizedNew) return normalizedNew;
-  return normalizeExamStatus(oldValue);
-}
-
-function calcResult(input: {
-  lyThuyet?: unknown;
-  moPhong?: unknown;
-  hinh?: unknown;
-  duong?: unknown;
-}) {
-  const lyThuyet = normalizeExamStatus(input.lyThuyet);
-  const moPhong = normalizeExamStatus(input.moPhong);
-  const hinh = normalizeExamStatus(input.hinh);
-  const duong = normalizeExamStatus(input.duong);
-
-  const failed: string[] = [];
-
-  if (lyThuyet && lyThuyet !== "Đạt") failed.push("L");
-  if (moPhong && moPhong !== "Đạt") failed.push("M");
-  if (hinh && hinh !== "Đạt") failed.push("H");
-  if (duong && duong !== "Đạt") failed.push("Đ");
-
-  const allPassed =
-    lyThuyet === "Đạt" &&
-    moPhong === "Đạt" &&
-    hinh === "Đạt" &&
-    duong === "Đạt";
-
-  return {
-    lyThuyet,
-    moPhong,
-    hinh,
-    duong,
-    ketQua: allPassed ? "Đạt" : "Không đạt",
-    noiDungRot: allPassed ? "" : failed.join("-"),
-  };
-}
-
-function parseDate(value: unknown): Date | null {
+function excelDateToDate(value: unknown): Date | null {
   if (value === null || value === undefined || value === "") return null;
 
-  if (value instanceof Date && !isNaN(value.getTime())) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value;
   }
 
   if (typeof value === "number") {
     const parsed = XLSX.SSF.parse_date_code(value);
     if (!parsed) return null;
-
-    return new Date(
-      parsed.y,
-      parsed.m - 1,
-      parsed.d,
-      parsed.H || 0,
-      parsed.M || 0,
-      parsed.S || 0
-    );
+    return new Date(parsed.y, parsed.m - 1, parsed.d);
   }
 
   const raw = String(value).trim();
   if (!raw) return null;
 
-  const ddmmyyyy = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (ddmmyyyy) {
-    const day = Number(ddmmyyyy[1]);
-    const month = Number(ddmmyyyy[2]);
-    const year = Number(ddmmyyyy[3]);
-    const date = new Date(year, month - 1, day);
-    if (!isNaN(date.getTime())) return date;
+  const vnMatch = raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (vnMatch) {
+    const [, d, m, y] = vnMatch;
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  const iso = new Date(raw);
-  if (!isNaN(iso.getTime())) return iso;
+  const isoMatch = raw.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
+    const date = new Date(Number(y), Number(m) - 1, Number(d));
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
 
-  return null;
+  const date = new Date(raw);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function calcKetQua(
+  lyThuyet: string | null,
+  moPhong: string | null,
+  hinh: string | null,
+  duong: string | null
+) {
+  const items = [
+    { key: "L", value: lyThuyet },
+    { key: "M", value: moPhong },
+    { key: "H", value: hinh },
+    { key: "Đ", value: duong },
+  ];
+
+  const failed = items
+    .filter((item) => item.value && item.value !== "DAT")
+    .map((item) => item.key);
+
+  const allPresent = items.every((item) => item.value !== null && item.value !== "");
+
+  if (allPresent && failed.length === 0) {
+    return { ketQua: "DAT", noiDungRot: null };
+  }
+
+  if (failed.length > 0) {
+    return { ketQua: "KHONG_DAT", noiDungRot: failed.join("-") };
+  }
+
+  return { ketQua: null, noiDungRot: null };
 }
 
 export async function POST(req: NextRequest) {
   try {
+    const preview = req.nextUrl.searchParams.get("preview") === "1";
+
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const file = formData.get("file");
+    const examDateFallback = cleanString(formData.get("examDate"));
+    const note = cleanString(formData.get("note"));
 
-    if (!file) {
-      return Response.json({ error: "Chưa upload file" }, { status: 400 });
-    }
-
-    const bytes = await file.arrayBuffer();
-    const workbook = XLSX.read(bytes, { type: "array" });
-    const sheetName = workbook.SheetNames[0];
-
-    if (!sheetName) {
-      return Response.json(
-        { error: "File Excel không có sheet nào" },
+    if (!(file instanceof File)) {
+      return NextResponse.json(
+        { ok: false, message: "Chưa chọn file Excel." },
         { status: 400 }
       );
     }
 
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const workbook = XLSX.read(buffer, { type: "buffer", cellDates: false });
+
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) {
+      return NextResponse.json(
+        { ok: false, message: "File Excel không có sheet dữ liệu." },
+        { status: 400 }
+      );
+    }
+
+    const sheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json<RawRow>(sheet, {
       defval: "",
+      raw: true,
     });
 
     if (!rows.length) {
-      return Response.json({ error: "File Excel trống" }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, message: "Không có dữ liệu trong file Excel." },
+        { status: 400 }
+      );
     }
 
-    let updated = 0;
-    const skipped: string[] = [];
+    let success = 0;
+    let failed = 0;
+    const errors: string[] = [];
 
-    for (const row of rows) {
-      const maDk = normalizeMaDK(
-        getCell(row, ["ma_dk", "madk", "ma dk"])
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
+      const maDk = cleanString(
+        getCell(row, ["ma dk", "ma_dk", "mã dk", "mã đăng ký"])
+      );
+
+      const ngayThiRaw = getCell(row, [
+        "ngay thi tot nghiep",
+        "ngay_thi_tot_nghiep",
+        "ngày thi tốt nghiệp",
+        "ngay thi",
+      ]);
+
+      const lyThuyet = normalizeResult(
+        getCell(row, ["ly thuyet", "ly_thuyet", "lý thuyết"])
+      );
+
+      const moPhong = normalizeResult(
+        getCell(row, ["mo phong", "mo_phong", "mô phỏng"])
+      );
+
+      const hinh = normalizeResult(
+        getCell(row, ["hinh", "hình"])
+      );
+
+      const duong = normalizeResult(
+        getCell(row, ["duong", "đường"])
       );
 
       if (!maDk) {
-        skipped.push("Thiếu ma_dk");
+        failed++;
+        errors.push(`Dòng ${i + 2}: thiếu MA_DK.`);
         continue;
       }
 
-      const student = await prisma.student.findFirst({
+      const student = await prisma.student.findUnique({
         where: { maDk },
+        select: { id: true },
       });
 
       if (!student) {
-        skipped.push(`${maDk}: không tìm thấy học viên`);
+        failed++;
+        errors.push(`Dòng ${i + 2}: không tìm thấy học viên MA_DK = ${maDk}.`);
         continue;
       }
 
-      const old = await prisma.graduationResult.findFirst({
+      const ngayThiFromFile = excelDateToDate(ngayThiRaw);
+      const ngayThiFallback = examDateFallback ? excelDateToDate(examDateFallback) : null;
+      const ngayThi = ngayThiFromFile || ngayThiFallback;
+
+      if (!ngayThi) {
+        failed++;
+        errors.push(`Dòng ${i + 2}: thiếu ngày thi hợp lệ.`);
+        continue;
+      }
+
+      const existing = await prisma.graduationResult.findFirst({
         where: { studentId: student.id },
         orderBy: { createdAt: "desc" },
       });
 
-      const merged = calcResult({
-        lyThuyet: pickNewOrOld(
-          getCell(row, ["ly_thuyet", "ly thuyet", "lý thuyết"]),
-          old?.lyThuyet
-        ),
-        moPhong: pickNewOrOld(
-          getCell(row, ["mo_phong", "mo phong", "mô phỏng"]),
-          old?.moPhong
-        ),
-        hinh: pickNewOrOld(
-          getCell(row, ["hinh", "hình"]),
-          old?.hinh
-        ),
-        duong: pickNewOrOld(
-          getCell(row, ["duong", "đường"]),
-          old?.duong
-        ),
-      });
+      const mergedLyThuyet = lyThuyet || existing?.lyThuyet || null;
+      const mergedMoPhong = moPhong || existing?.moPhong || null;
+      const mergedHinh = hinh || existing?.hinh || null;
+      const mergedDuong = duong || existing?.duong || null;
 
-      await prisma.graduationResult.create({
-        data: {
-          studentId: student.id,
-          ngayThi:
-            parseDate(
-              getCell(row, [
-                "ngay_thi_tot_nghiep",
-                "ngày_thi_tốt_nghiệp",
-                "ngay thi tot nghiep",
-              ])
-            ) ??
-            old?.ngayThi ??
-            null,
-          lyThuyet: merged.lyThuyet,
-          moPhong: merged.moPhong,
-          hinh: merged.hinh,
-          duong: merged.duong,
-          ketQua: merged.ketQua,
-          noiDungRot: merged.noiDungRot,
-        },
-      });
+      const { ketQua, noiDungRot } = calcKetQua(
+        mergedLyThuyet,
+        mergedMoPhong,
+        mergedHinh,
+        mergedDuong
+      );
 
-      updated++;
+      if (!preview) {
+        await prisma.graduationResult.create({
+          data: {
+            studentId: student.id,
+            ngayThi,
+            lyThuyet: mergedLyThuyet,
+            moPhong: mergedMoPhong,
+            hinh: mergedHinh,
+            duong: mergedDuong,
+            ketQua,
+            noiDungRot: note
+              ? noiDungRot
+                ? `${noiDungRot} | ${note}`
+                : note
+              : noiDungRot,
+          },
+        });
+      }
+
+      success++;
     }
 
-    return Response.json({
-      success: true,
-      updated,
-      skipped,
+    return NextResponse.json({
+      ok: failed === 0,
+      message: preview
+        ? "Kiểm tra file hoàn tất."
+        : "Import kết quả tốt nghiệp hoàn tất.",
+      summary: {
+        total: rows.length,
+        success,
+        failed,
+      },
+      errors,
     });
   } catch (error) {
     console.error("IMPORT_GRADUATION_ERROR:", error);
-
-    return Response.json(
-      {
-        error: "Lỗi import tốt nghiệp",
-        detail: error instanceof Error ? error.message : String(error),
-      },
+    return NextResponse.json(
+      { ok: false, message: "Import tốt nghiệp thất bại." },
       { status: 500 }
     );
   }
